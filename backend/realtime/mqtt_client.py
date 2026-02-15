@@ -20,6 +20,7 @@ from channels.layers import get_channel_layer
 from devices.models import Device
 from biometrics.models import BiometricSession
 from realtime.validators import validate_mqtt_message, validate_device_pairing
+from realtime.ml_service import MLPredictionService
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,9 @@ class MQTTClient:
 
         # Channel layer for WebSocket broadcasting
         self.channel_layer = get_channel_layer()
+
+        # ML prediction service (singleton)
+        self.ml_service = MLPredictionService()
 
     def _parse_broker_url(self, url: str) -> tuple[str, int]:
         """
@@ -202,19 +206,36 @@ class MQTTClient:
 
             logger.info(f"Validated device: {serial_number} (paired to patient {patient.id})")
 
-            # Store to database (T019)
-            biometric_session = self._store_to_database(payload, device, patient)
+            # Generate ML prediction (T044)
+            prediction = None
+            ml_predicted_at = None
+            try:
+                sensor_data = {
+                    'tremor_intensity': payload['tremor_intensity'],
+                    'frequency': payload['frequency'],
+                    'timestamps': payload['timestamps'],
+                }
+                prediction = self.ml_service.predict_severity(sensor_data)
+                if prediction:
+                    ml_predicted_at = timezone.now()
+                    logger.info(f"ML prediction generated: {prediction}")
+            except Exception as e:
+                logger.error(f"ML prediction failed: {e}", exc_info=True)
+                # Continue processing without prediction (T046)
+
+            # Store to database (T019, T044, T047)
+            biometric_session = self._store_to_database(payload, device, patient, prediction, ml_predicted_at)
             logger.info(f"Stored BiometricSession: id={biometric_session.id}")
 
-            # Broadcast to WebSocket clients via channel layer (T034 - will be implemented in Phase 4)
-            # self._broadcast_to_websocket(payload, patient.id, biometric_session)
+            # Broadcast to WebSocket clients via channel layer (T034, T045)
+            self._broadcast_to_websocket(payload, patient, device, biometric_session, prediction)
 
         except ValidationError as e:
             logger.warning(f"Validation error for MQTT message: {e}")
         except Exception as e:
             logger.error(f"Error processing MQTT message: {e}", exc_info=True)
 
-    def _store_to_database(self, payload: dict, device: Device, patient) -> BiometricSession:
+    def _store_to_database(self, payload: dict, device: Device, patient, prediction: Optional[dict] = None, ml_predicted_at: Optional[timezone.datetime] = None) -> BiometricSession:
         """
         Store sensor data to database as BiometricSession.
 
@@ -222,6 +243,8 @@ class MQTTClient:
             payload: MQTT message payload
             device: Device instance
             patient: Patient instance
+            prediction: ML prediction dict (severity, confidence) or None
+            ml_predicted_at: Timestamp when prediction was generated or None
 
         Returns:
             Created BiometricSession instance
@@ -250,6 +273,8 @@ class MQTTClient:
                     'frequency': payload['frequency'],
                     'timestamps': payload['timestamps'],
                 },
+                ml_prediction=prediction,
+                ml_predicted_at=ml_predicted_at,
                 received_via_mqtt=True
             )
 
@@ -272,6 +297,8 @@ class MQTTClient:
                         'frequency': payload['frequency'],
                         'timestamps': payload['timestamps'],
                     },
+                    ml_prediction=prediction,
+                    ml_predicted_at=ml_predicted_at,
                     received_via_mqtt=True
                 )
                 logger.info(f"Database write succeeded on retry: id={biometric_session.id}")
@@ -279,3 +306,50 @@ class MQTTClient:
             except Exception as retry_error:
                 logger.error(f"Database write failed on retry. Discarding message: {retry_error}")
                 raise
+
+    def _broadcast_to_websocket(self, payload: dict, patient, device: Device, biometric_session: BiometricSession, prediction: Optional[dict] = None):
+        """
+        Broadcast tremor data to WebSocket clients via Django Channels.
+
+        Sends message to channel group: patient_{patient_id}_tremor_data
+
+        Args:
+            payload: MQTT message payload
+            patient: Patient instance
+            device: Device instance
+            biometric_session: BiometricSession instance that was just created
+            prediction: ML prediction dict (severity, confidence) or None
+
+        Note:
+            This method uses async_to_sync because it's called from a sync context (MQTT callback).
+            The channel layer will distribute the message to all WebSocket consumers in the group.
+        """
+        try:
+            # Construct WebSocket message (T045)
+            ws_message = {
+                'type': 'tremor_data',  # Maps to consumer method: tremor_data()
+                'message': {
+                    'type': 'tremor_data',
+                    'patient_id': patient.id,
+                    'device_serial': device.serial_number,
+                    'timestamp': payload['timestamp'],
+                    'tremor_intensity': payload['tremor_intensity'],
+                    'frequency': payload['frequency'],
+                    'session_duration': payload['session_duration'],
+                    'prediction': prediction,  # Include ML prediction if available
+                    'received_at': timezone.now().isoformat(),
+                }
+            }
+
+            # Send to channel group
+            group_name = f'patient_{patient.id}_tremor_data'
+            async_to_sync(self.channel_layer.group_send)(
+                group_name,
+                ws_message
+            )
+
+            logger.debug(f"Broadcast tremor data to WebSocket group: {group_name}")
+
+        except Exception as e:
+            logger.error(f"Failed to broadcast to WebSocket: {e}", exc_info=True)
+            # Don't raise - broadcasting failure shouldn't block MQTT processing

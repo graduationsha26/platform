@@ -120,6 +120,58 @@ The MQTT subscriber will:
 
 Press `Ctrl+C` to stop the MQTT subscriber.
 
+### 8. Set Up ML Models (Feature 002: Real-Time Pipeline - Optional)
+
+**For AI-powered tremor severity predictions**, place trained ML models in `backend/models/` directory:
+
+**Required Model**:
+- `tremor_classifier.pkl` - scikit-learn model for tremor severity classification
+
+**Optional Model**:
+- `tremor_classifier.h5` - TensorFlow/Keras model (alternative to .pkl)
+
+**Model Format Requirements**:
+
+**scikit-learn model** (`.pkl`):
+- Must be a classifier with `predict()` and `predict_proba()` methods
+- Input: numpy array of shape `(1, 4)` with features:
+  - `tremor_intensity_avg` (float 0.0-1.0)
+  - `tremor_intensity_max` (float 0.0-1.0)
+  - `tremor_intensity_std` (float)
+  - `frequency` (float, Hz)
+- Output: class index (0=mild, 1=moderate, 2=severe)
+
+**TensorFlow/Keras model** (`.h5`):
+- Must be a compiled Keras model
+- Input: same as sklearn (4 features)
+- Output: probability distribution over 3 classes [mild, moderate, severe]
+
+**Prediction Output Schema**:
+```json
+{
+  "severity": "mild" | "moderate" | "severe",
+  "confidence": 0.0-1.0
+}
+```
+
+**How ML Predictions Work**:
+1. MQTT client receives sensor data from glove device
+2. ML service extracts features (tremor intensity stats + frequency)
+3. Model predicts severity class and confidence score
+4. Prediction stored in `BiometricSession.ml_prediction` field
+5. Prediction broadcast to WebSocket clients in real-time
+
+**No Model?** The system works without ML models - tremor data is still collected and streamed. Predictions will be `null` if models are missing.
+
+**Installing ML Dependencies** (if using models):
+```bash
+# For scikit-learn models
+py -m pip install scikit-learn joblib
+
+# For TensorFlow models
+py -m pip install tensorflow
+```
+
 ## API Documentation
 
 Once the server is running, visit:
@@ -162,6 +214,148 @@ Query parameters for sessions:
 - `device` - Filter by device ID
 - `start_date` - Filter by start date (ISO format)
 - `end_date` - Filter by end date (ISO format)
+
+### WebSocket Connections (Real-Time Data)
+
+**Feature 002: Real-Time Pipeline** provides WebSocket endpoints for streaming live tremor data from glove devices.
+
+#### WebSocket Endpoint
+
+**URL**: `ws://localhost:8000/ws/tremor-data/{patient_id}/`
+
+**Authentication**: JWT token required as query parameter
+
+**URL Format**:
+```
+ws://localhost:8000/ws/tremor-data/1/?token=<YOUR_JWT_ACCESS_TOKEN>
+```
+
+#### Message Types
+
+**1. Status Message** (sent on connection):
+```json
+{
+  "type": "status",
+  "status": "connected",
+  "message": "Successfully connected to patient 1 tremor data stream",
+  "timestamp": "2024-02-15T10:30:00Z"
+}
+```
+
+**2. Tremor Data Message** (real-time sensor data):
+```json
+{
+  "type": "tremor_data",
+  "patient_id": 1,
+  "device_serial": "GLV-2024-A001",
+  "timestamp": "2024-02-15T10:30:15Z",
+  "tremor_intensity": [0.25, 0.30, 0.28, 0.32],
+  "frequency": 4.5,
+  "session_duration": 1000,
+  "prediction": null,
+  "received_at": "2024-02-15T10:30:15.123Z"
+}
+```
+
+**3. Ping/Pong** (keepalive):
+```json
+// Client sends:
+{"type": "ping", "timestamp": "2024-02-15T10:30:00Z"}
+
+// Server responds:
+{"type": "pong", "timestamp": "2024-02-15T10:30:00.100Z"}
+```
+
+**4. Error Message**:
+```json
+{
+  "type": "error",
+  "error_code": "unauthorized",
+  "error_message": "Invalid or expired JWT token",
+  "timestamp": "2024-02-15T10:30:00Z"
+}
+```
+
+#### JavaScript Example
+
+```javascript
+// 1. Get JWT token from login response
+const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...";
+
+// 2. Connect to WebSocket with token
+const patientId = 1;
+const ws = new WebSocket(`ws://localhost:8000/ws/tremor-data/${patientId}/?token=${token}`);
+
+// 3. Handle connection open
+ws.onopen = () => {
+  console.log("WebSocket connected");
+
+  // Send ping every 30 seconds (keepalive)
+  setInterval(() => {
+    ws.send(JSON.stringify({
+      type: "ping",
+      timestamp: new Date().toISOString()
+    }));
+  }, 30000);
+};
+
+// 4. Handle incoming messages
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  switch (data.type) {
+    case "status":
+      console.log("Status:", data.message);
+      break;
+
+    case "tremor_data":
+      console.log("Tremor data received:", data);
+      // Update UI with real-time data
+      updateChart(data.tremor_intensity, data.timestamp);
+      break;
+
+    case "pong":
+      console.log("Pong received");
+      break;
+
+    case "error":
+      console.error("WebSocket error:", data.error_message);
+      break;
+  }
+};
+
+// 5. Handle errors
+ws.onerror = (error) => {
+  console.error("WebSocket error:", error);
+};
+
+// 6. Handle connection close
+ws.onclose = (event) => {
+  console.log("WebSocket closed:", event.code, event.reason);
+
+  // Reconnect logic (optional)
+  if (event.code === 4401) {
+    console.error("Authentication failed - token invalid or expired");
+  } else if (event.code === 4403) {
+    console.error("Access forbidden - user does not have access to this patient");
+  }
+};
+```
+
+#### Access Control
+
+- **Patient users**: Can only connect to their own data (patient_id must match their user)
+- **Doctor users**: Can connect to data for patients assigned to them
+- **WebSocket close codes**:
+  - `4401`: Unauthorized (invalid/missing JWT token)
+  - `4403`: Forbidden (no access to patient)
+  - `4500`: Internal server error
+
+#### Prerequisites for WebSocket
+
+- Redis server running (`redis-server`)
+- MQTT subscriber running (`python manage.py run_mqtt_subscriber`)
+- Django Channels configured (automatic with Feature 002)
 
 ## Project Structure
 

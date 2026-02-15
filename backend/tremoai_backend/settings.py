@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'biometrics',
     'realtime',  # Real-Time Pipeline (Feature 002)
     'analytics',  # Analytics and Reporting (Feature 003)
+    'inference',  # ML/DL Inference API (Feature 008)
 ]
 
 MIDDLEWARE = [
@@ -268,3 +269,12 @@ LOGGING = {
 
 # Create logs directory if it doesn't exist
 os.makedirs(BASE_DIR / 'logs', exist_ok=True)
+
+# ML/DL Inference Configuration (Feature 008)
+# Model paths for trained ML and DL models
+ML_MODELS_DIR = BASE_DIR / 'ml_models' / 'models'
+DL_MODELS_DIR = BASE_DIR / 'dl_models' / 'models'
+
+# Default model for inference when not specified in request
+# Options: 'rf' (Random Forest), 'svm' (SVM), 'lstm' (LSTM), 'cnn_1d' (1D-CNN)
+DEFAULT_INFERENCE_MODEL = config('DEFAULT_INFERENCE_MODEL', default='rf')

@@ -18,4 +18,5 @@ urlpatterns = [
     path('api/devices/', include('devices.urls')),
     path('api/biometric-sessions/', include('biometrics.urls')),
     path('api/analytics/', include('analytics.urls')),  # Feature 003: Analytics and Reporting
+    path('api/inference/', include('inference.urls')),  # Feature 008: ML/DL Inference API
 ]

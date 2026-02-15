@@ -1,0 +1,306 @@
+openapi: 3.0.3
+info:
+  title: TremoAI ML/DL Inference API
+  description: |
+    REST API endpoint for real-time tremor prediction using trained ML/DL models.
+    Supports 4 models: Random Forest, SVM, LSTM, and 1D-CNN with automatic preprocessing
+    and model caching for optimal performance.
+  version: 1.0.0
+  contact:
+    name: TremoAI Platform
+    email: support@tremoai.example.com
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /inference/:
+    post:
+      summary: Perform tremor prediction
+      description: |
+        Accepts sensor data and returns tremor prediction with severity assessment.
+        Supports both ML models (18 engineered features) and DL models (128×6 raw sequences).
+
+        **Performance**: <2 seconds response time (95th percentile)
+
+        **Authentication**: Requires JWT token with patient or doctor role
+      operationId: performInference
+      tags:
+        - Inference
+      parameters:
+        - name: model
+          in: query
+          description: |
+            Model to use for inference. If omitted, uses default model configured in settings.
+
+            Available models:
+            - `rf`: Random Forest (ML, <100ms)
+            - `svm`: Support Vector Machine (ML, <100ms)
+            - `lstm`: Long Short-Term Memory (DL, <500ms)
+            - `cnn_1d`: 1D Convolutional Neural Network (DL, <500ms)
+          required: false
+          schema:
+            type: string
+            enum: [rf, svm, lstm, cnn_1d]
+            default: rf
+          example: lstm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InferenceRequest'
+            examples:
+              dlModelRequest:
+                summary: Deep Learning Model Request (LSTM/CNN)
+                value:
+                  sensor_data:
+                    - [0.12, -0.45, 0.89, -1.23, 2.34, -0.56]
+                    - [0.15, -0.43, 0.91, -1.20, 2.30, -0.54]
+                    - [0.18, -0.41, 0.93, -1.18, 2.28, -0.52]
+                  # ... (125 more timesteps for total of 128)
+              mlModelRequest:
+                summary: Machine Learning Model Request (RF/SVM)
+                value:
+                  sensor_data: [0.34, -1.23, 2.45, -0.67, 1.89, -0.12, 3.45, -2.34, 0.78, -0.98, 1.56, -1.34, 2.12, -0.45, 0.89, -1.67, 2.89, -0.34]
+      responses:
+        '200':
+          description: Inference successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceResponse'
+              examples:
+                basicResponse:
+                  summary: P1 - Basic Response
+                  value:
+                    prediction: true
+                    severity: 2
+                    timestamp: '2026-02-16T14:32:45.123Z'
+                modelSelectionResponse:
+                  summary: P2 - With Model Selection
+                  value:
+                    prediction: true
+                    severity: 2
+                    model_used: lstm
+                    timestamp: '2026-02-16T14:32:45.123Z'
+                enhancedResponse:
+                  summary: P3 - Enhanced Metadata
+                  value:
+                    prediction: true
+                    severity: 2
+                    confidence_score: 0.87
+                    model_used: lstm
+                    model_version: lstm_v1.0_2026-02-10
+                    inference_time_ms: 423
+                    input_validation:
+                      data_quality: good
+                      missing_values: false
+                      out_of_range_values: false
+                    timestamp: '2026-02-16T14:32:45.123Z'
+        '400':
+          description: Bad request - Invalid input or model selection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidShape:
+                  summary: Invalid input shape
+                  value:
+                    error: 'Invalid input shape: expected (128, 6), received (100, 6)'
+                    error_code: INVALID_INPUT_SHAPE
+                invalidModel:
+                  summary: Invalid model selection
+                  value:
+                    error: 'Model not found: invalid_model'
+                    error_code: MODEL_NOT_FOUND
+                    available_models: [rf, svm, lstm, cnn_1d]
+                    suggestion: 'Please select from available models'
+                invalidValues:
+                  summary: Invalid sensor values
+                  value:
+                    error: 'Invalid sensor values detected (NaN/Inf)'
+                    error_code: INVALID_SENSOR_VALUES
+        '401':
+          description: Unauthorized - Missing or invalid JWT token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: 'Invalid or expired authentication token'
+                error_code: UNAUTHORIZED
+        '413':
+          description: Payload too large - Request exceeds 100KB limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: 'Request payload too large. Maximum 100KB allowed.'
+                error_code: PAYLOAD_TOO_LARGE
+        '503':
+          description: Service unavailable - Model loading failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: 'Model unavailable: lstm. Please complete model training.'
+                error_code: MODEL_UNAVAILABLE
+                suggestion: 'Complete Feature 006 (DL model training) or select available model'
+        '504':
+          description: Gateway timeout - Inference exceeded time limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: 'Inference timeout exceeded. Please try again.'
+                error_code: INFERENCE_TIMEOUT
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from authentication endpoint.
+        Include in Authorization header: `Authorization: Bearer <token>`
+
+  schemas:
+    InferenceRequest:
+      type: object
+      required:
+        - sensor_data
+      properties:
+        sensor_data:
+          oneOf:
+            - type: array
+              description: Deep Learning model input (128 timesteps × 6 axes)
+              items:
+                type: array
+                items:
+                  type: number
+                  format: float
+                minItems: 6
+                maxItems: 6
+              minItems: 128
+              maxItems: 128
+            - type: array
+              description: Machine Learning model input (18 engineered features)
+              items:
+                type: number
+                format: float
+              minItems: 18
+              maxItems: 18
+          example: [[0.12, -0.45, 0.89, -1.23, 2.34, -0.56]]
+
+    InferenceResponse:
+      type: object
+      required:
+        - prediction
+        - severity
+        - timestamp
+      properties:
+        prediction:
+          type: boolean
+          description: Tremor detected (true) or not detected (false)
+          example: true
+        severity:
+          type: integer
+          description: |
+            Severity level:
+            - 0: No tremor
+            - 1: Mild tremor (probability 0.3-0.5)
+            - 2: Moderate tremor (probability 0.5-0.7)
+            - 3: Severe tremor (probability >0.7)
+          minimum: 0
+          maximum: 3
+          example: 2
+        model_used:
+          type: string
+          description: Model used for inference (P2 feature)
+          enum: [rf, svm, lstm, cnn_1d]
+          example: lstm
+        confidence_score:
+          type: number
+          format: float
+          description: Model confidence score 0.0-1.0 (P3 feature)
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.87
+        model_version:
+          type: string
+          description: Model version identifier (P3 feature)
+          example: lstm_v1.0_2026-02-10
+        inference_time_ms:
+          type: integer
+          description: Inference duration in milliseconds (P3 feature)
+          example: 423
+        input_validation:
+          type: object
+          description: Data quality assessment (P3 feature)
+          properties:
+            data_quality:
+              type: string
+              enum: [good, degraded, poor]
+              description: Overall data quality assessment
+              example: good
+            missing_values:
+              type: boolean
+              description: Any NaN or missing values detected
+              example: false
+            out_of_range_values:
+              type: boolean
+              description: Any values outside expected sensor range
+              example: false
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when prediction was generated
+          example: '2026-02-16T14:32:45.123Z'
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - error_code
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: Invalid input shape
+        error_code:
+          type: string
+          description: Machine-readable error code
+          enum:
+            - INVALID_INPUT_SHAPE
+            - INVALID_SENSOR_VALUES
+            - MODEL_NOT_FOUND
+            - MODEL_UNAVAILABLE
+            - INFERENCE_TIMEOUT
+            - UNAUTHORIZED
+            - PAYLOAD_TOO_LARGE
+            - INTERNAL_ERROR
+          example: INVALID_INPUT_SHAPE
+        available_models:
+          type: array
+          items:
+            type: string
+          description: List of available models (included when MODEL_NOT_FOUND)
+          example: [rf, svm, cnn_1d]
+        suggestion:
+          type: string
+          description: Actionable suggestion to resolve the error
+          example: Complete Feature 006 training or select available model
+
+tags:
+  - name: Inference
+    description: ML/DL model inference operations

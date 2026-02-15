@@ -1,0 +1,563 @@
+openapi: 3.0.3
+info:
+  title: TremoAI Analytics API
+  description: |
+    Analytics and reporting endpoints for tremor statistics and PDF report generation.
+
+    **Feature**: 003-analytics-reporting
+    **Spec**: ../spec.md
+    **Data Model**: ../data-model.md
+  version: 1.0.0
+  contact:
+    name: TremoAI Platform
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+
+tags:
+  - name: Statistics
+    description: Tremor statistics aggregation endpoints
+  - name: Reports
+    description: PDF report generation endpoints
+
+paths:
+  /analytics/stats/:
+    get:
+      summary: Get tremor statistics
+      description: |
+        Retrieve aggregated tremor statistics for a patient over a specified date range.
+
+        **User Story**: P1 - Tremor Statistics Aggregation (MVP)
+
+        **Statistics Included**:
+        - Average tremor amplitude (0.0-1.0 normalized)
+        - Dominant tremor frequency (Hz)
+        - Tremor reduction percentage vs baseline
+        - ML severity summary (if predictions available)
+
+        **Grouping Options**:
+        - `session`: One data point per biometric session
+        - `day`: Aggregate all sessions within each day
+
+        **Access Control**:
+        - Doctors: Can access stats for all assigned patients
+        - Patients: Can only access their own statistics
+      tags:
+        - Statistics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: patient_id
+          in: query
+          required: true
+          schema:
+            type: integer
+            example: 4
+          description: Patient ID to retrieve statistics for
+
+        - name: group_by
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [session, day]
+            default: day
+          description: Grouping level (session-level or daily aggregates)
+
+        - name: start_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+            example: "2026-01-01"
+          description: Start date (inclusive) in ISO format YYYY-MM-DD
+
+        - name: end_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+            example: "2026-02-15"
+          description: End date (inclusive) in ISO format YYYY-MM-DD
+
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number for pagination
+
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Number of data points per page
+
+      responses:
+        '200':
+          description: Statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatisticsResponse'
+              examples:
+                daily_statistics:
+                  summary: Daily aggregated statistics
+                  value:
+                    count: 5
+                    next: null
+                    previous: null
+                    baseline:
+                      baseline_amplitude: 0.52
+                      baseline_sessions: [101, 102, 103]
+                      baseline_period_start: "2026-01-10T09:00:00Z"
+                      baseline_period_end: "2026-01-10T18:30:00Z"
+                    results:
+                      - period: "2026-02-11"
+                        period_start: "2026-02-11T00:00:00Z"
+                        period_end: "2026-02-11T23:59:59Z"
+                        session_count: 2
+                        avg_amplitude: 0.45
+                        dominant_frequency: 4.8
+                        tremor_reduction_pct: 13.5
+                        ml_severity_summary:
+                          mild: 0
+                          moderate: 2
+                          severe: 0
+                      - period: "2026-02-12"
+                        period_start: "2026-02-12T00:00:00Z"
+                        period_end: "2026-02-12T23:59:59Z"
+                        session_count: 3
+                        avg_amplitude: 0.42
+                        dominant_frequency: 4.6
+                        tremor_reduction_pct: 19.2
+                        ml_severity_summary:
+                          mild: 1
+                          moderate: 2
+                          severe: 0
+
+                session_statistics:
+                  summary: Session-level statistics
+                  value:
+                    count: 3
+                    next: null
+                    previous: null
+                    baseline:
+                      baseline_amplitude: 0.52
+                      baseline_sessions: [101, 102, 103]
+                      baseline_period_start: "2026-01-10T09:00:00Z"
+                      baseline_period_end: "2026-01-10T18:30:00Z"
+                    results:
+                      - period: "205"
+                        period_start: "2026-02-15T09:00:00Z"
+                        period_end: "2026-02-15T09:15:22Z"
+                        session_count: 1
+                        avg_amplitude: 0.38
+                        dominant_frequency: 4.2
+                        tremor_reduction_pct: 26.9
+                        ml_severity_summary:
+                          mild: 1
+                          moderate: 0
+                          severe: 0
+
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_date_range:
+                  summary: End date before start date
+                  value:
+                    error: "Invalid date range"
+                    detail: "end_date must be greater than or equal to start_date"
+                    code: "INVALID_DATE_RANGE"
+
+                future_date:
+                  summary: Date in the future
+                  value:
+                    error: "Invalid date"
+                    detail: "Dates cannot be in the future"
+                    code: "FUTURE_DATE"
+
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+        '403':
+          description: User does not have access to this patient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Access forbidden"
+                detail: "You do not have permission to access this patient's data"
+                code: "PATIENT_ACCESS_FORBIDDEN"
+
+        '404':
+          description: Patient not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Patient not found"
+                detail: "No patient exists with ID 999"
+                code: "PATIENT_NOT_FOUND"
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /analytics/reports/:
+    post:
+      summary: Generate PDF report
+      description: |
+        Generate a comprehensive PDF report containing tremor statistics, charts, and ML predictions.
+
+        **User Story**: P2 - PDF Report Generation
+
+        **Report Contents**:
+        - Patient information header
+        - Statistics summary table
+        - Line charts showing tremor trends over time
+        - ML prediction severity distribution
+        - Date range and generation timestamp
+
+        **Response**: Returns PDF file as binary attachment for download
+
+        **Performance**: Reports are generated on-demand (may take 5-10 seconds for large datasets)
+
+        **Access Control**: Same as statistics endpoint
+      tags:
+        - Reports
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportRequest'
+            examples:
+              basic_report:
+                summary: Basic report for 30 days
+                value:
+                  patient_id: 4
+                  start_date: "2026-01-15"
+                  end_date: "2026-02-15"
+                  include_charts: true
+                  include_ml_summary: true
+
+      responses:
+        '200':
+          description: PDF report generated successfully
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: Attachment filename
+              example: 'attachment; filename="report_patient4_20260215_143022.pdf"'
+            Content-Length:
+              schema:
+                type: integer
+              description: PDF file size in bytes
+              example: 2834567
+
+        '202':
+          description: Report generation accepted (processing)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Report generation in progress. This may take up to 10 seconds."
+                  estimated_time:
+                    type: integer
+                    description: Estimated time in seconds
+                    example: 8
+
+        '400':
+          description: Invalid report parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                no_data:
+                  summary: No sessions in date range
+                  value:
+                    error: "Insufficient data"
+                    detail: "No biometric sessions found for patient in specified date range"
+                    code: "NO_DATA_FOR_REPORT"
+
+                file_too_large:
+                  summary: Generated PDF exceeds size limit
+                  value:
+                    error: "Report generation failed"
+                    detail: "Generated PDF exceeds maximum size of 5MB. Try reducing date range."
+                    code: "PDF_SIZE_LIMIT_EXCEEDED"
+
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+        '500':
+          description: PDF generation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                generation_failure:
+                  summary: PDF generation failed
+                  value:
+                    error: "Report generation failed"
+                    detail: "An error occurred while generating the PDF. Please try again."
+                    code: "PDF_GENERATION_ERROR"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token from /api/auth/login/
+
+  schemas:
+    TremorStatistics:
+      type: object
+      required:
+        - period
+        - period_start
+        - period_end
+        - session_count
+        - avg_amplitude
+        - dominant_frequency
+      properties:
+        period:
+          type: string
+          description: Period identifier (session ID or date YYYY-MM-DD)
+          example: "2026-02-15"
+        period_start:
+          type: string
+          format: date-time
+          description: Start of period (ISO 8601)
+          example: "2026-02-15T00:00:00Z"
+        period_end:
+          type: string
+          format: date-time
+          description: End of period (ISO 8601)
+          example: "2026-02-15T23:59:59Z"
+        session_count:
+          type: integer
+          minimum: 1
+          description: Number of sessions in this period
+          example: 3
+        avg_amplitude:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Average tremor amplitude (normalized 0.0-1.0)
+          example: 0.42
+        dominant_frequency:
+          type: number
+          format: float
+          minimum: 0.0
+          description: Dominant tremor frequency in Hz
+          example: 4.8
+        tremor_reduction_pct:
+          type: number
+          format: float
+          nullable: true
+          minimum: -100.0
+          maximum: 100.0
+          description: Tremor reduction percentage vs baseline (negative = worsened)
+          example: 18.5
+        ml_severity_summary:
+          type: object
+          nullable: true
+          description: Distribution of ML severity predictions
+          properties:
+            mild:
+              type: integer
+              minimum: 0
+              example: 1
+            moderate:
+              type: integer
+              minimum: 0
+              example: 2
+            severe:
+              type: integer
+              minimum: 0
+              example: 0
+
+    Baseline:
+      type: object
+      required:
+        - baseline_amplitude
+        - baseline_sessions
+        - baseline_period_start
+        - baseline_period_end
+      properties:
+        baseline_amplitude:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Average tremor amplitude from baseline sessions
+          example: 0.52
+        baseline_sessions:
+          type: array
+          items:
+            type: integer
+          description: Session IDs used for baseline calculation (first 3 sessions)
+          example: [101, 102, 103]
+        baseline_period_start:
+          type: string
+          format: date-time
+          description: Timestamp of earliest baseline session
+          example: "2026-01-10T09:00:00Z"
+        baseline_period_end:
+          type: string
+          format: date-time
+          description: Timestamp of latest baseline session
+          example: "2026-01-10T18:30:00Z"
+
+    StatisticsResponse:
+      type: object
+      required:
+        - count
+        - results
+      properties:
+        count:
+          type: integer
+          description: Total number of data points (for pagination)
+          example: 30
+        next:
+          type: string
+          format: uri
+          nullable: true
+          description: URL to next page (null if last page)
+          example: "http://localhost:8000/api/analytics/stats/?page=2&patient_id=4"
+        previous:
+          type: string
+          format: uri
+          nullable: true
+          description: URL to previous page (null if first page)
+          example: null
+        baseline:
+          $ref: '#/components/schemas/Baseline'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TremorStatistics'
+          description: Array of statistics data points (ordered chronologically)
+
+    ReportRequest:
+      type: object
+      required:
+        - patient_id
+      properties:
+        patient_id:
+          type: integer
+          description: Patient ID to generate report for
+          example: 4
+        start_date:
+          type: string
+          format: date
+          nullable: true
+          description: Report start date (inclusive), defaults to earliest session
+          example: "2026-01-01"
+        end_date:
+          type: string
+          format: date
+          nullable: true
+          description: Report end date (inclusive), defaults to today
+          example: "2026-02-15"
+        include_charts:
+          type: boolean
+          default: true
+          description: Include trend charts in PDF
+        include_ml_summary:
+          type: boolean
+          default: true
+          description: Include ML prediction summary
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - detail
+        - code
+      properties:
+        error:
+          type: string
+          description: Human-readable error summary
+          example: "Invalid request"
+        detail:
+          type: string
+          description: Detailed error message
+          example: "The end_date parameter must be greater than or equal to start_date"
+        code:
+          type: string
+          description: Machine-readable error code
+          example: "INVALID_DATE_RANGE"
+        field:
+          type: string
+          nullable: true
+          description: Field name that caused the error (for validation errors)
+          example: "end_date"
+
+  responses:
+    UnauthorizedError:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Authentication required"
+            detail: "Valid JWT token required in Authorization header"
+            code: "UNAUTHORIZED"
+
+    ForbiddenError:
+      description: User does not have permission to access resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Access forbidden"
+            detail: "You do not have permission to access this patient's data"
+            code: "PATIENT_ACCESS_FORBIDDEN"
+
+    InternalServerError:
+      description: Server error during request processing
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Internal server error"
+            detail: "An unexpected error occurred. Please try again later."
+            code: "INTERNAL_ERROR"

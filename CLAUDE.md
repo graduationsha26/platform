@@ -209,7 +209,11 @@ This Speckit instance is configured for the **TremoAI Web Platform** - a graduat
 - Django 5.x + Django REST Framework + Django Channels
 - Python with pytest for testing
 - Django Channels WebSocket for real-time data streaming
+  - channels-redis (Redis channel layer backend)
+  - Redis server (localhost:6379) for inter-process communication
 - MQTT client for glove sensor data ingestion
+  - paho-mqtt library for MQTT protocol
+  - MQTT broker (Mosquitto or equivalent)
 - AI/ML models: scikit-learn (.pkl) and TensorFlow/Keras (.h5)
 
 **Frontend**:

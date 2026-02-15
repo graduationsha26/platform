@@ -27,12 +27,12 @@ class Command(BaseCommand):
                     )
                     self.stdout.write(
                         self.style.SUCCESS(
-                            f'✓ Created test doctor: {doctor_email} (password: doctor123)'
+                            f'[OK] Created test doctor: {doctor_email} (password: doctor123)'
                         )
                     )
                 else:
                     self.stdout.write(
-                        self.style.WARNING(f'⚠ Doctor already exists: {doctor_email}')
+                        self.style.WARNING(f'[WARN] Doctor already exists: {doctor_email}')
                     )
 
                 # Create test patient
@@ -47,16 +47,16 @@ class Command(BaseCommand):
                     )
                     self.stdout.write(
                         self.style.SUCCESS(
-                            f'✓ Created test patient: {patient_email} (password: patient123)'
+                            f'[OK] Created test patient: {patient_email} (password: patient123)'
                         )
                     )
                 else:
                     self.stdout.write(
-                        self.style.WARNING(f'⚠ Patient already exists: {patient_email}')
+                        self.style.WARNING(f'[WARN] Patient already exists: {patient_email}')
                     )
 
                 self.stdout.write(
-                    self.style.SUCCESS('\n✓ Test users created successfully!')
+                    self.style.SUCCESS('\n[OK] Test users created successfully!')
                 )
                 self.stdout.write('\nTest Credentials:')
                 self.stdout.write('  Doctor:  doctor@test.com  / doctor123')
@@ -64,6 +64,6 @@ class Command(BaseCommand):
 
         except Exception as e:
             self.stdout.write(
-                self.style.ERROR(f'✗ Error creating test users: {str(e)}')
+                self.style.ERROR(f'[ERROR] Error creating test users: {str(e)}')
             )
             raise

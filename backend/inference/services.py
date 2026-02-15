@@ -12,7 +12,7 @@ import numpy as np
 
 from django.conf import settings
 
-from .exceptions import ModelNotFoundError, ModelLoadError
+from .exceptions import ModelNotFoundError, ModelLoadError, InferenceTimeoutError
 
 
 class ModelCache:

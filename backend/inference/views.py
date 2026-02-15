@@ -7,7 +7,7 @@ from rest_framework import status
 from django.utils import timezone
 
 from .serializers import InferenceRequestSerializer, InferenceResponseSerializer
-from .services import ModelLoader, PreprocessingService, InferenceService
+from .services import ModelLoader, PreprocessingService, InferenceService, InputValidationService
 from .exceptions import (
     InferenceError, ModelNotFoundError, ModelLoadError,
     InvalidInputError, InferenceTimeoutError

@@ -1,0 +1,417 @@
+openapi: 3.0.3
+info:
+  title: TremoAI Devices API
+  description: Device registration, pairing, and status tracking endpoints
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+
+paths:
+  /devices/:
+    get:
+      summary: List devices
+      description: Get list of registered devices (doctors see all, patients see own paired device)
+      tags:
+        - Devices
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [online, offline]
+          description: Filter by device status
+      responses:
+        '200':
+          description: List of devices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  next:
+                    type: string
+                    nullable: true
+                  previous:
+                    type: string
+                    nullable: true
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DeviceList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      summary: Register device
+      description: Register new glove device (doctors only)
+      tags:
+        - Devices
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - serial_number
+              properties:
+                serial_number:
+                  type: string
+                  pattern: '^[A-Z0-9]{8,20}$'
+                  example: "GLV123456789"
+      responses:
+        '201':
+          description: Device registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceDetail'
+        '400':
+          description: Validation error or serial number already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                duplicate:
+                  value:
+                    error: "Device with this serial number already exists"
+                    code: "unique_serial"
+                invalid_format:
+                  value:
+                    error: "Serial number must be 8-20 alphanumeric characters"
+                    code: "invalid_serial_format"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /devices/{id}/:
+    get:
+      summary: Get device details
+      description: Retrieve device information
+      tags:
+        - Devices
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Device details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /devices/{id}/pair/:
+    post:
+      summary: Pair device to patient
+      description: Pair device to patient (unpairs from previous patient if already paired, doctors only)
+      tags:
+        - Devices
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Device ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - patient_id
+              properties:
+                patient_id:
+                  type: integer
+                  description: Patient ID to pair device to
+                  example: 10
+      responses:
+        '200':
+          description: Device paired successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_id:
+                    type: integer
+                    example: 1
+                  patient_id:
+                    type: integer
+                    example: 10
+                  paired_at:
+                    type: string
+                    format: date-time
+                  previous_patient_id:
+                    type: integer
+                    nullable: true
+                    description: Previous patient ID if device was re-paired
+                    example: null
+        '400':
+          description: Invalid patient or pairing error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /devices/{id}/unpair/:
+    post:
+      summary: Unpair device from patient
+      description: Remove device-patient pairing (doctors only)
+      tags:
+        - Devices
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Device unpaired successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_id:
+                    type: integer
+                  message:
+                    type: string
+                    example: "Device unpaired successfully"
+        '400':
+          description: Device not currently paired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /devices/{id}/status/:
+    put:
+      summary: Update device status
+      description: Update device online/offline status and last seen timestamp (system or doctors)
+      tags:
+        - Devices
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [online, offline]
+                  example: "online"
+                last_seen:
+                  type: string
+                  format: date-time
+                  description: Optional - defaults to now if not provided
+                  example: "2026-02-15T10:30:00Z"
+      responses:
+        '200':
+          description: Device status updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_id:
+                    type: integer
+                  status:
+                    type: string
+                    enum: [online, offline]
+                  last_seen:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  schemas:
+    DeviceList:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        serial_number:
+          type: string
+          example: "GLV123456789"
+        status:
+          type: string
+          enum: [online, offline]
+          example: "online"
+        last_seen:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-02-15T10:28:00Z"
+        patient:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: integer
+            full_name:
+              type: string
+        registered_at:
+          type: string
+          format: date-time
+
+    DeviceDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        serial_number:
+          type: string
+          example: "GLV123456789"
+        status:
+          type: string
+          enum: [online, offline]
+          example: "online"
+        last_seen:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-02-15T10:28:00Z"
+        patient:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: integer
+              example: 10
+            full_name:
+              type: string
+              example: "Jane Smith"
+            contact_email:
+              type: string
+              example: "jane.smith@example.com"
+        registered_by:
+          type: object
+          properties:
+            id:
+              type: integer
+            email:
+              type: string
+        registered_at:
+          type: string
+          format: date-time
+          example: "2026-02-15T09:00:00Z"
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Forbidden:
+      description: User lacks permission
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Device not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Device not found"
+            code: "not_found"
+
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+security:
+  - BearerAuth: []

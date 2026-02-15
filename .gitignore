@@ -50,6 +50,3 @@ Thumbs.db
 backend/models/*.pkl
 backend/models/*.h5
 backend/models/*.pb
-
-# Specs directory (feature work)
-specs/

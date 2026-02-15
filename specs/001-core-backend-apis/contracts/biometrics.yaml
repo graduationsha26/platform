@@ -1,0 +1,449 @@
+openapi: 3.0.3
+info:
+  title: TremoAI Biometric Data API
+  description: Biometric sensor data storage, retrieval, and aggregation endpoints
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+
+paths:
+  /biometric-sessions/:
+    get:
+      summary: List biometric sessions
+      description: Get list of biometric sessions with optional date range filtering
+      tags:
+        - Biometrics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: patient_id
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Filter by patient ID
+        - name: device_id
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Filter by device ID
+        - name: start_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter sessions starting from this date (inclusive)
+          example: "2026-02-01"
+        - name: end_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter sessions up to this date (inclusive)
+          example: "2026-02-15"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 50
+          description: Items per page (max 100)
+      responses:
+        '200':
+          description: List of biometric sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    example: 125
+                  next:
+                    type: string
+                    nullable: true
+                  previous:
+                    type: string
+                    nullable: true
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BiometricSessionList'
+        '400':
+          description: Invalid date range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "end_date must be after start_date"
+                code: "invalid_date_range"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      summary: Create biometric session
+      description: Store new sensor data session (devices/MQTT or doctors for testing)
+      tags:
+        - Biometrics
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BiometricSessionCreate'
+      responses:
+        '201':
+          description: Session created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BiometricSessionDetail'
+        '400':
+          description: Validation error or device not paired to patient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                device_not_paired:
+                  value:
+                    error: "Device is not paired to any patient"
+                    code: "device_not_paired"
+                pairing_mismatch:
+                  value:
+                    error: "Device is paired to different patient"
+                    code: "device_patient_mismatch"
+                    details:
+                      device_patient_id: 10
+                      provided_patient_id: 15
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /biometric-sessions/{id}/:
+    get:
+      summary: Get session details
+      description: Retrieve single biometric session with full sensor data
+      tags:
+        - Biometrics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Session details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BiometricSessionDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /biometric-sessions/aggregate/:
+    get:
+      summary: Get aggregated metrics
+      description: Get aggregated statistics for biometric sessions (average tremor, count, duration)
+      tags:
+        - Biometrics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: patient_id
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Patient ID to aggregate data for
+        - name: start_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Start date for aggregation (inclusive)
+        - name: end_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: End date for aggregation (inclusive)
+      responses:
+        '200':
+          description: Aggregated metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BiometricAggregation'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  schemas:
+    BiometricSessionList:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        patient:
+          type: object
+          properties:
+            id:
+              type: integer
+            full_name:
+              type: string
+        device:
+          type: object
+          properties:
+            id:
+              type: integer
+            serial_number:
+              type: string
+        session_start:
+          type: string
+          format: date-time
+          example: "2026-02-15T10:00:00Z"
+        session_duration:
+          type: string
+          description: Duration in ISO 8601 format
+          example: "PT5M30S"
+        created_at:
+          type: string
+          format: date-time
+
+    BiometricSessionDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        patient:
+          type: object
+          properties:
+            id:
+              type: integer
+              example: 10
+            full_name:
+              type: string
+              example: "Jane Smith"
+        device:
+          type: object
+          properties:
+            id:
+              type: integer
+              example: 1
+            serial_number:
+              type: string
+              example: "GLV123456789"
+        session_start:
+          type: string
+          format: date-time
+          example: "2026-02-15T10:00:00Z"
+        session_duration:
+          type: string
+          description: Duration in ISO 8601 format (PTxHxMxS)
+          example: "PT5M30S"
+        sensor_data:
+          type: object
+          description: JSON object containing sensor measurements
+          properties:
+            tremor_intensity:
+              type: array
+              items:
+                type: number
+                format: float
+              description: Array of tremor intensity values (0-1 scale)
+              example: [0.5, 0.7, 0.6, 0.8, 0.9, 0.7]
+            timestamps:
+              type: array
+              items:
+                type: integer
+              description: Milliseconds from session_start
+              example: [0, 20, 40, 60, 80, 100]
+            frequency:
+              type: integer
+              description: Sampling frequency in Hz
+              example: 50
+            metadata:
+              type: object
+              properties:
+                firmware_version:
+                  type: string
+                  example: "1.2.3"
+                battery_level:
+                  type: integer
+                  example: 85
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-02-15T10:05:35Z"
+
+    BiometricSessionCreate:
+      type: object
+      required:
+        - patient_id
+        - device_id
+        - session_start
+        - session_duration
+        - sensor_data
+      properties:
+        patient_id:
+          type: integer
+          example: 10
+        device_id:
+          type: integer
+          example: 1
+        session_start:
+          type: string
+          format: date-time
+          example: "2026-02-15T10:00:00Z"
+        session_duration:
+          type: string
+          description: Duration in ISO 8601 format (PTxHxMxS)
+          example: "PT5M30S"
+        sensor_data:
+          type: object
+          required:
+            - tremor_intensity
+            - timestamps
+            - frequency
+          properties:
+            tremor_intensity:
+              type: array
+              items:
+                type: number
+                format: float
+              minItems: 1
+            timestamps:
+              type: array
+              items:
+                type: integer
+              minItems: 1
+            frequency:
+              type: integer
+              minimum: 1
+            metadata:
+              type: object
+              description: Optional metadata (firmware version, battery, etc.)
+
+    BiometricAggregation:
+      type: object
+      properties:
+        patient_id:
+          type: integer
+          example: 10
+        date_range:
+          type: object
+          properties:
+            start_date:
+              type: string
+              format: date
+              nullable: true
+            end_date:
+              type: string
+              format: date
+              nullable: true
+        metrics:
+          type: object
+          properties:
+            session_count:
+              type: integer
+              description: Total number of sessions
+              example: 42
+            total_duration:
+              type: string
+              description: Total recording duration (ISO 8601)
+              example: "PT3H45M"
+            average_tremor_intensity:
+              type: number
+              format: float
+              description: Average tremor intensity across all sessions (0-1 scale)
+              example: 0.65
+            min_tremor_intensity:
+              type: number
+              format: float
+              example: 0.3
+            max_tremor_intensity:
+              type: number
+              format: float
+              example: 0.95
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Forbidden:
+      description: User lacks permission
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Session not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Biometric session not found"
+            code: "not_found"
+
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+security:
+  - BearerAuth: []

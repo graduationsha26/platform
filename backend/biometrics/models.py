@@ -22,6 +22,23 @@ class BiometricSession(models.Model):
     session_start = models.DateTimeField()
     session_duration = models.DurationField()
     sensor_data = models.JSONField()
+
+    # Real-Time Pipeline (Feature 002) - ML prediction fields
+    ml_prediction = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="ML model prediction results (severity, confidence)"
+    )
+    ml_predicted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when ML prediction was generated"
+    )
+    received_via_mqtt = models.BooleanField(
+        default=False,
+        help_text="True if session data arrived via MQTT real-time pipeline"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -63,6 +80,41 @@ class BiometricSession(models.Model):
                 raise ValidationError({
                     'sensor_data': f'Missing required keys: {", ".join(missing_keys)}'
                 })
+
+        # Validate ml_prediction consistency
+        if self.ml_prediction and not self.ml_predicted_at:
+            raise ValidationError({
+                'ml_predicted_at': 'ml_predicted_at must be set when ml_prediction is provided.'
+            })
+
+        # Validate ml_prediction JSON structure
+        if self.ml_prediction:
+            required_pred_keys = ['severity', 'confidence']
+            missing_pred_keys = [key for key in required_pred_keys if key not in self.ml_prediction]
+            if missing_pred_keys:
+                raise ValidationError({
+                    'ml_prediction': f'Missing required keys: {", ".join(missing_pred_keys)}'
+                })
+
+            # Validate severity value
+            valid_severities = ['mild', 'moderate', 'severe']
+            if self.ml_prediction.get('severity') not in valid_severities:
+                raise ValidationError({
+                    'ml_prediction': f'Severity must be one of: {", ".join(valid_severities)}'
+                })
+
+            # Validate confidence range
+            confidence = self.ml_prediction.get('confidence')
+            if confidence is not None and not (0.0 <= confidence <= 1.0):
+                raise ValidationError({
+                    'ml_prediction': 'Confidence must be between 0.0 and 1.0'
+                })
+
+        # Validate ml_predicted_at is after or equal to session_start
+        if self.ml_predicted_at and self.session_start and self.ml_predicted_at < self.session_start:
+            raise ValidationError({
+                'ml_predicted_at': 'ML prediction timestamp cannot be before session start time.'
+            })
 
     def save(self, *args, **kwargs):
         """Override save to call full_clean for validation."""

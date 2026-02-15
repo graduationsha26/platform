@@ -93,6 +93,33 @@ python manage.py runserver
 
 The API will be available at `http://localhost:8000`
 
+### 7. Run MQTT Subscriber (Feature 002: Real-Time Pipeline)
+
+**For real-time tremor data collection**, run the MQTT subscriber in a **separate terminal**:
+
+```bash
+cd backend
+python manage.py run_mqtt_subscriber
+```
+
+**Prerequisites**:
+- MQTT broker running (e.g., Mosquitto on localhost:1883)
+- Redis server running (localhost:6379) for Django Channels
+- Environment variables configured in `.env`:
+  - `MQTT_BROKER_URL` (e.g., `mqtt://localhost:1883`)
+  - `MQTT_USERNAME`
+  - `MQTT_PASSWORD`
+  - `REDIS_URL` (e.g., `redis://localhost:6379/0`)
+
+The MQTT subscriber will:
+- Connect to the MQTT broker
+- Subscribe to `devices/+/data` topics
+- Validate incoming sensor data
+- Store data to BiometricSession in PostgreSQL
+- Broadcast data to WebSocket clients (when Phase 4 is complete)
+
+Press `Ctrl+C` to stop the MQTT subscriber.
+
 ## API Documentation
 
 Once the server is running, visit:

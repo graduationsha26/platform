@@ -35,12 +35,14 @@ INSTALLED_APPS = [
     'django_filters',
     'corsheaders',
     'drf_spectacular',
+    'channels',  # Django Channels for WebSocket support
 
     # Local apps
     'authentication',
     'patients',
     'devices',
     'biometrics',
+    'realtime',  # Real-Time Pipeline (Feature 002)
 ]
 
 MIDDLEWARE = [
@@ -73,6 +75,19 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'tremoai_backend.wsgi.application'
+
+# ASGI Application (for Django Channels WebSocket support)
+ASGI_APPLICATION = 'tremoai_backend.asgi.application'
+
+# Django Channels Layer (Redis backend for real-time features)
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [config('REDIS_URL', default='redis://localhost:6379/0')],
+        },
+    },
+}
 
 # Database (Supabase PostgreSQL)
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases

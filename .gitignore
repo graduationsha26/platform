@@ -1,0 +1,55 @@
+# TremoAI Web Platform - Git Ignore
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# Django
+*.log
+db.sqlite3
+db.sqlite3-journal
+/media
+/staticfiles
+.env
+.env.local
+
+# React/Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI/ML Models
+backend/models/*.pkl
+backend/models/*.h5
+backend/models/*.pb
+
+# Specs directory (feature work)
+specs/

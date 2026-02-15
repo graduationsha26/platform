@@ -21,7 +21,8 @@ def custom_exception_handler(exc, context):
         # Format the error response
         error_data = {
             'error': str(exc),
-            'code': getattr(exc, 'default_code', 'error')
+            'code': getattr(exc, 'default_code', 'error'),
+            'details': {}
         }
 
         # Add details if available
@@ -30,6 +31,15 @@ def custom_exception_handler(exc, context):
                 error_data['details'] = exc.detail
             elif isinstance(exc.detail, list):
                 error_data['details'] = {'messages': exc.detail}
+            else:
+                # Single string detail
+                error_data['details'] = {'message': str(exc.detail)}
+
+        # Add request context for debugging (optional)
+        if context and 'request' in context:
+            request = context['request']
+            error_data['details']['path'] = request.path
+            error_data['details']['method'] = request.method
 
         response.data = error_data
 

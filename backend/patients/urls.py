@@ -1,6 +1,12 @@
 """URL routing for patients endpoints."""
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import PatientViewSet
+
+# Create DRF router
+router = DefaultRouter()
+router.register(r'', PatientViewSet, basename='patient')
 
 urlpatterns = [
-    # TODO: Add patient endpoints
+    path('', include(router.urls)),
 ]

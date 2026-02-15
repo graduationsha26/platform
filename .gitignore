@@ -27,6 +27,10 @@ backend/media/
 .env
 .env.local
 
+# ML/DL Data Preparation (Feature 004)
+backend/ml_data/processed/*
+!backend/ml_data/processed/.gitkeep
+
 # React/Node
 node_modules/
 npm-debug.log*
@@ -51,3 +55,27 @@ Thumbs.db
 backend/models/*.pkl
 backend/models/*.h5
 backend/models/*.pb
+
+# ML/DL Model Training (Feature 005)
+backend/ml_models/models/*.pkl
+backend/ml_models/models/*.json
+!backend/ml_models/models/.gitkeep
+
+# Deep Learning Models Training (Feature 006)
+backend/dl_models/models/*.h5
+backend/dl_models/models/*.keras
+backend/dl_models/models/*.json
+backend/dl_models/models/*.txt
+!backend/dl_models/models/.gitkeep
+
+# Model Comparison & Deployment Selection (Feature 007)
+backend/model_comparison/reports/*.md
+backend/model_comparison/reports/*.pdf
+backend/model_comparison/reports/*.json
+backend/model_comparison/reports/*.csv
+backend/model_comparison/reports/charts/*.png
+!backend/model_comparison/reports/.gitkeep
+!backend/model_comparison/reports/charts/.gitkeep
+backend/model_comparison/decisions/*.md
+backend/model_comparison/decisions/*.pdf
+!backend/model_comparison/decisions/.gitkeep

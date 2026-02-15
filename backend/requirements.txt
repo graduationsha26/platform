@@ -19,3 +19,11 @@ reportlab==4.4.9
 matplotlib==3.10.8
 pillow==12.1.0
 numpy==2.4.1
+
+# ML/DL Data Preparation (Feature 004)
+pandas>=2.0.0
+scipy>=1.10.0
+scikit-learn>=1.3.0
+
+# Deep Learning Models Training (Feature 006)
+tensorflow>=2.13.0

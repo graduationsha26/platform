@@ -17,4 +17,5 @@ urlpatterns = [
     path('api/patients/', include('patients.urls')),
     path('api/devices/', include('devices.urls')),
     path('api/biometric-sessions/', include('biometrics.urls')),
+    path('api/analytics/', include('analytics.urls')),  # Feature 003: Analytics and Reporting
 ]

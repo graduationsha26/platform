@@ -215,6 +215,82 @@ Query parameters for sessions:
 - `start_date` - Filter by start date (ISO format)
 - `end_date` - Filter by end date (ISO format)
 
+### Analytics and Reporting
+
+**Feature 003: Analytics and Reporting** provides statistical analysis and PDF report generation for tremor data.
+
+#### Statistics Endpoint
+
+- `GET /api/analytics/stats/` - Get aggregated tremor statistics
+
+**Query Parameters**:
+- `patient_id` (required) - Patient ID to analyze
+- `group_by` (optional) - Grouping level: `session` or `day` (default: `day`)
+- `start_date` (optional) - Start date (ISO format YYYY-MM-DD)
+- `end_date` (optional) - End date (ISO format YYYY-MM-DD)
+- `page` (optional) - Page number (default: 1)
+- `page_size` (optional) - Results per page (default: 50, max: 100)
+
+**Response**:
+- Paginated statistics with baseline comparison
+- Average tremor amplitude (0.0-1.0)
+- Dominant frequency (Hz)
+- Tremor reduction percentage vs baseline
+- ML severity summary (mild/moderate/severe counts)
+
+**Access Control**:
+- Doctors: Can access stats for all assigned patients
+- Patients: Can only access their own statistics
+
+**Example**:
+```bash
+curl -X GET "http://localhost:8000/api/analytics/stats/?patient_id=4&group_by=day&start_date=2026-01-15&end_date=2026-02-15" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+#### PDF Report Generation
+
+- `POST /api/analytics/reports/` - Generate downloadable PDF report
+
+**Request Body** (JSON):
+```json
+{
+  "patient_id": 4,
+  "start_date": "2026-01-15",
+  "end_date": "2026-02-15",
+  "include_charts": true,
+  "include_ml_summary": true
+}
+```
+
+**Response**: PDF file (application/pdf) as attachment
+
+**Report Contents**:
+- Patient information header
+- Statistics summary table
+- Tremor amplitude trend chart
+- Tremor reduction vs baseline chart
+- ML severity distribution (if available)
+
+**File Constraints**:
+- Maximum size: 5MB
+- Generation time: < 10 seconds
+- Temporary files auto-deleted after download
+
+**Example**:
+```bash
+curl -X POST http://localhost:8000/api/analytics/reports/ \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"patient_id": 4, "start_date": "2026-01-15", "end_date": "2026-02-15"}' \
+  --output report.pdf
+```
+
+**Management Command** - Cleanup old reports:
+```bash
+py manage.py cleanup_temp_reports  # Deletes PDFs older than 24 hours
+```
+
 ### WebSocket Connections (Real-Time Data)
 
 **Feature 002: Real-Time Pipeline** provides WebSocket endpoints for streaming live tremor data from glove devices.

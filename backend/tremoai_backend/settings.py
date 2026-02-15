@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'devices',
     'biometrics',
     'realtime',  # Real-Time Pipeline (Feature 002)
+    'analytics',  # Analytics and Reporting (Feature 003)
 ]
 
 MIDDLEWARE = [

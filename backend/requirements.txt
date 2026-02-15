@@ -13,3 +13,9 @@ channels==4.0.0
 channels-redis==4.1.0
 paho-mqtt==1.6.1
 redis==5.0.1
+
+# Analytics and Reporting (Feature 003)
+reportlab==4.4.9
+matplotlib==3.10.8
+pillow==12.1.0
+numpy==2.4.1

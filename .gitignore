@@ -61,12 +61,21 @@ backend/ml_models/models/*.pkl
 backend/ml_models/models/*.json
 !backend/ml_models/models/.gitkeep
 
+# Raw Feature Pipeline Models (Feature 011)
+backend/ml_models/*.pkl
+backend/ml_models/backup/*.pkl
+backend/ml_data/params.json.backup
+
 # Deep Learning Models Training (Feature 006)
 backend/dl_models/models/*.h5
 backend/dl_models/models/*.keras
 backend/dl_models/models/*.json
 backend/dl_models/models/*.txt
 !backend/dl_models/models/.gitkeep
+
+# Raw Feature Pipeline DL Models (Feature 011)
+backend/dl_models/*.h5
+backend/dl_models/backup/*.h5
 
 # Model Comparison & Deployment Selection (Feature 007)
 backend/model_comparison/reports/*.md

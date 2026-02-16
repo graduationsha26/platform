@@ -73,13 +73,13 @@ class MLPredictor:
         # Load and validate models
         self._load_models()
 
-        print(f"✓ ML Predictor ready ({len(self.models)} models loaded)")
+        print(f"[OK] ML Predictor ready ({len(self.models)} models loaded)")
 
     def _load_params(self):
         """Load and validate normalization parameters."""
         print("\nLoading normalization parameters...")
         self.params = load_params(self.params_path)
-        print(f"✓ Loaded params: {len(self.params['features'])} features")
+        print(f"[OK] Loaded params: {len(self.params['features'])} features")
 
     def _load_models(self):
         """Load and validate all ML models."""
@@ -95,16 +95,16 @@ class MLPredictor:
             model_path = os.path.join(self.model_dir, filename)
 
             if not os.path.exists(model_path):
-                print(f"⚠ Warning: {filename} not found, skipping")
+                print(f"[WARN] Warning: {filename} not found, skipping")
                 continue
 
             try:
                 # Validate and load model (checks n_features_in_=6)
                 model = validate_sklearn_model(model_path, expected_features=6)
                 self.models[model_key] = model
-                print(f"✓ {model_key.upper()}: n_features_in_={model.n_features_in_}")
+                print(f"[OK] {model_key.upper()}: n_features_in_={model.n_features_in_}")
             except Exception as e:
-                print(f"✗ Failed to load {filename}: {e}")
+                print(f"[ERROR] Failed to load {filename}: {e}")
                 raise
 
         if not self.models:
@@ -152,11 +152,12 @@ class MLPredictor:
                 f"Input should be [aX, aY, aZ, gX, gY, gZ]"
             )
 
-        # Normalize
-        normalized = normalize_features(sensor_data, self.params)
+        # NOTE: Current models were trained on RAW data (not normalized)
+        # TODO: Retrain models with normalized data for better generalization
+        # For now, pass raw data directly to match training pipeline
 
         # Reshape for sklearn (expects 2D: n_samples × n_features)
-        X = normalized.reshape(1, -1)
+        X = sensor_data.reshape(1, -1)
 
         # Predict
         model = self.models[model_type]
@@ -279,12 +280,12 @@ if __name__ == '__main__':
 
         # Check latency requirement
         if result['latency_ms'] < 70:
-            print(f"✓ Latency within requirement (<70ms)")
+            print(f"[OK] Latency within requirement (<70ms)")
         else:
-            print(f"⚠ Latency exceeds requirement: {result['latency_ms']:.2f} ms > 70 ms")
+            print(f"[WARN] Latency exceeds requirement: {result['latency_ms']:.2f} ms > 70 ms")
 
     except Exception as e:
-        print(f"\n✗ Error: {e}")
+        print(f"\n[ERROR] Error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

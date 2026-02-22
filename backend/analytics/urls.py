@@ -11,6 +11,9 @@ from . import views
 app_name = 'analytics'
 
 urlpatterns = [
+    # Feature 032: Dashboard overview summary stats
+    path('dashboard/', views.DashboardStatsView.as_view(), name='dashboard-stats'),
+
     # User Story 1: Statistics endpoint (MVP)
     path('stats/', views.StatisticsView.as_view(), name='statistics'),
 

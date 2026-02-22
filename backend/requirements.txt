@@ -11,7 +11,7 @@ drf-spectacular>=0.27.0
 # Real-time Pipeline (Feature 002)
 channels==4.0.0
 channels-redis==4.1.0
-paho-mqtt==1.6.1
+paho-mqtt>=2.0.0
 redis==5.0.1
 
 # Analytics and Reporting (Feature 003)

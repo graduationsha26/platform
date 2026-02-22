@@ -15,7 +15,8 @@ from django.http import Http404
 
 from patients.models import Patient, DoctorPatientAssignment
 from analytics.services.statistics import StatisticsService
-from analytics.serializers import StatisticsResponseSerializer
+from analytics.services.dashboard import DashboardService
+from analytics.serializers import StatisticsResponseSerializer, DashboardStatsSerializer
 
 
 class StandardResultsPagination(PageNumberPagination):
@@ -27,6 +28,41 @@ class StandardResultsPagination(PageNumberPagination):
     page_size = 50
     page_size_query_param = 'page_size'
     max_page_size = 100
+
+
+class DashboardStatsView(APIView):
+    """
+    GET /api/analytics/dashboard/
+
+    Feature 032: Dashboard Overview Page
+
+    Returns system-wide summary statistics for the logged-in doctor:
+    - total_patients: all patients assigned to this doctor
+    - active_devices: devices with status='online' across those patients
+    - alerts_count: sessions with severe ML prediction in the last 24 hours
+    - tremor_trend: 7-day daily average dominant_amplitude (always 7 entries)
+
+    Access Control:
+        - Doctors only
+
+    Returns:
+        200: Dashboard statistics
+        401: Authentication required (handled by IsAuthenticated)
+        403: Doctor role required
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Return dashboard stats for the authenticated doctor."""
+        if request.user.role != 'doctor':
+            return Response(
+                {'error': 'Only doctors can access the dashboard.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        stats = DashboardService().get_dashboard_stats(doctor=request.user)
+        serializer = DashboardStatsSerializer(stats)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class StatisticsView(APIView):

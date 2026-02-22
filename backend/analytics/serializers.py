@@ -119,6 +119,46 @@ class StatisticsResponseSerializer(serializers.Serializer):
     )
 
 
+class TremorTrendPointSerializer(serializers.Serializer):
+    """
+    Serializer for a single daily tremor trend data point.
+
+    Feature 032: Dashboard Overview Page
+    """
+    date = serializers.DateField(
+        help_text="Calendar date (YYYY-MM-DD)"
+    )
+    avg_amplitude = serializers.FloatField(
+        allow_null=True,
+        help_text="Mean dominant tremor amplitude for this day; null if no data"
+    )
+
+
+class DashboardStatsSerializer(serializers.Serializer):
+    """
+    Response serializer for GET /api/analytics/dashboard/
+
+    Feature 032: Dashboard Overview Page
+    Returns system-wide summary statistics scoped to the logged-in doctor.
+    """
+    total_patients = serializers.IntegerField(
+        min_value=0,
+        help_text="Total patients assigned to the logged-in doctor"
+    )
+    active_devices = serializers.IntegerField(
+        min_value=0,
+        help_text="Devices with status='online' across the doctor's patients"
+    )
+    alerts_count = serializers.IntegerField(
+        min_value=0,
+        help_text="BiometricSessions with severe ML prediction in the last 24 hours"
+    )
+    tremor_trend = TremorTrendPointSerializer(
+        many=True,
+        help_text="7-day daily average tremor amplitude (always exactly 7 entries)"
+    )
+
+
 class ReportRequestSerializer(serializers.Serializer):
     """
     Request serializer for PDF report generation.

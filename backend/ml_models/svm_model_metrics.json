@@ -1,0 +1,16 @@
+{
+  "model_type": "SVM",
+  "accuracy": 0.9044472227183425,
+  "f1_score": 0.9043919838820633,
+  "n_features": 6,
+  "feature_names": [
+    "aX",
+    "aY",
+    "aZ",
+    "gX",
+    "gY",
+    "gZ"
+  ],
+  "kernel": "rbf",
+  "trained_date": "2026-02-18T03:51:55.987004Z"
+}

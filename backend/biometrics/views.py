@@ -10,12 +10,14 @@ from django.db.models import Q
 from datetime import datetime
 
 from authentication.permissions import IsOwnerOrDoctor
-from .models import BiometricSession
+from .models import BiometricSession, BiometricReading, TremorMetrics
 from .serializers import (
     BiometricSessionListSerializer,
     BiometricSessionDetailSerializer,
     BiometricSessionCreateSerializer,
-    BiometricAggregationSerializer
+    BiometricAggregationSerializer,
+    BiometricReadingSerializer,
+    TremorMetricsSerializer,
 )
 from .aggregation import aggregate_biometric_data
 
@@ -44,17 +46,7 @@ class BiometricSessionViewSet(viewsets.ModelViewSet):
         """
         user = self.request.user
 
-        if user.role == 'patient':
-            # Patients see only their own sessions
-            try:
-                patient_profile = user.patient_profile
-                return BiometricSession.objects.filter(
-                    patient=patient_profile
-                ).select_related('patient', 'device')
-            except:
-                return BiometricSession.objects.none()
-
-        elif user.role == 'doctor':
+        if user.role == 'doctor':
             # Doctors see sessions for patients they created or are assigned to
             from patients.models import Patient
             accessible_patients = Patient.objects.filter(
@@ -172,19 +164,7 @@ class BiometricSessionViewSet(viewsets.ModelViewSet):
 
         # Check if user has access to this patient
         user = request.user
-        if user.role == 'patient':
-            try:
-                if user.patient_profile.id != patient_id:
-                    return Response(
-                        {'error': 'You can only access your own data'},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-            except:
-                return Response(
-                    {'error': 'Patient profile not found'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-        elif user.role == 'doctor':
+        if user.role == 'doctor':
             from patients.models import Patient
             accessible = Patient.objects.filter(
                 Q(id=patient_id) & (Q(created_by=user) | Q(doctor_assignments__doctor=user))
@@ -225,3 +205,146 @@ class BiometricSessionViewSet(viewsets.ModelViewSet):
 
         serializer = BiometricAggregationSerializer(results)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class BiometricReadingViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Read-only ViewSet for BiometricReading records.
+
+    Provides:
+    - list:     GET /api/biometric-readings/
+    - retrieve: GET /api/biometric-readings/{id}/
+
+    Access control:
+    - Doctors see readings for patients they created or are assigned to.
+    - Patients see only their own readings.
+
+    The BiometricReadingViewSet exposes only the 6 active IMU sensor axes
+    (aX, aY, aZ, gX, gY, gZ). No magnetometer or flex fields were ever
+    part of the BiometricReading model.
+    """
+
+    permission_classes = [IsAuthenticated, IsOwnerOrDoctor]
+    serializer_class = BiometricReadingSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['patient']
+
+    def get_queryset(self):
+        """Filter readings by user access."""
+        user = self.request.user
+
+        if user.role == 'doctor':
+            from patients.models import Patient
+            accessible_patients = Patient.objects.filter(
+                Q(created_by=user) | Q(doctor_assignments__doctor=user)
+            ).distinct()
+            return BiometricReading.objects.filter(
+                patient__in=accessible_patients
+            ).select_related('patient')
+
+        # Patient role: own readings only
+        return BiometricReading.objects.filter(
+            patient__user=user
+        ).select_related('patient')
+
+
+class TremorMetricsViewSet(viewsets.ReadOnlyModelViewSet):
+    """Read-only ViewSet for TremorMetrics records.
+
+    Provides:
+    - list:   GET /api/tremor-metrics/?patient_id={id}
+    - latest: GET /api/tremor-metrics/latest/?patient_id={id}
+
+    Records are created exclusively by TremorFilterService at ~1 Hz
+    during glove streaming sessions.
+
+    Access control:
+    - Doctors see metrics for patients they created or are assigned to.
+    - Patients see only their own metrics.
+    """
+
+    permission_classes = [IsAuthenticated, IsOwnerOrDoctor]
+    serializer_class = TremorMetricsSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['patient', 'tremor_detected']
+
+    def get_queryset(self):
+        """Filter metrics by user access."""
+        user = self.request.user
+
+        if user.role == 'doctor':
+            from patients.models import Patient
+            accessible_patients = Patient.objects.filter(
+                Q(created_by=user) | Q(doctor_assignments__doctor=user)
+            ).distinct()
+            return TremorMetrics.objects.filter(
+                patient__in=accessible_patients
+            ).select_related('patient')
+
+        # Patient role: own metrics only
+        return TremorMetrics.objects.filter(
+            patient__user=user
+        ).select_related('patient')
+
+    def list(self, request, *args, **kwargs):
+        """List tremor metrics for a patient (requires patient_id query param)."""
+        patient_id = request.query_params.get('patient_id')
+        if not patient_id:
+            return Response(
+                {'error': 'patient_id parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            patient_id = int(patient_id)
+        except ValueError:
+            return Response(
+                {'error': 'patient_id must be an integer'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        queryset = self.get_queryset().filter(patient_id=patient_id)
+
+        # Apply tremor_detected filter if provided
+        tremor_detected = request.query_params.get('tremor_detected')
+        if tremor_detected is not None:
+            queryset = queryset.filter(tremor_detected=tremor_detected.lower() == 'true')
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='latest')
+    def latest(self, request):
+        """Return the most recent TremorMetrics record for a patient."""
+        patient_id = request.query_params.get('patient_id')
+        if not patient_id:
+            return Response(
+                {'error': 'patient_id parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            patient_id = int(patient_id)
+        except ValueError:
+            return Response(
+                {'error': 'patient_id must be an integer'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        metric = (
+            self.get_queryset()
+            .filter(patient_id=patient_id)
+            .order_by('-window_start')
+            .first()
+        )
+        if metric is None:
+            return Response(
+                {'error': f'No tremor metrics found for patient {patient_id}'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = self.get_serializer(metric)
+        return Response(serializer.data)

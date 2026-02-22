@@ -8,12 +8,12 @@ class InferenceRequestSerializer(serializers.Serializer):
     Serializer for inference request payload.
 
     Validates incoming sensor data and ensures correct format.
-    Supports both ML model format (18 features) and DL model format (128x6 sequences).
+    Supports both ML model format (6 features) and DL model format (128x6 sequences).
     """
 
     sensor_data = serializers.ListField(
         required=True,
-        help_text="Sensor data: 2D array (128x6) for DL or 1D array (18) for ML",
+        help_text="Sensor data: 2D array (128x6) for DL or 1D array (6) for ML — [aX, aY, aZ, gX, gY, gZ]",
         allow_empty=False
     )
 
@@ -23,7 +23,7 @@ class InferenceRequestSerializer(serializers.Serializer):
 
         Accepts:
         - 2D array with shape (128, 6) for DL models (LSTM, CNN)
-        - 1D array with length 18 for ML models (RF, SVM)
+        - 1D array with length 6 for ML models (RF, SVM) — [aX, aY, aZ, gX, gY, gZ]
 
         Detailed shape validation happens in validators.py after model type is known.
         """
@@ -43,10 +43,15 @@ class InferenceRequestSerializer(serializers.Serializer):
                     "For DL models, sensor_data must be a 2D array (all elements must be lists)"
                 )
         elif isinstance(first_element, (int, float)):
-            # ML format: 1D array
+            # ML format: 1D array with exactly 6 features [aX, aY, aZ, gX, gY, gZ]
             if not all(isinstance(x, (int, float)) for x in value):
                 raise serializers.ValidationError(
                     "For ML models, sensor_data must be a 1D array of numbers"
+                )
+            if len(value) != 6:
+                raise serializers.ValidationError(
+                    f"ML models require exactly 6 features [aX, aY, aZ, gX, gY, gZ], "
+                    f"got {len(value)}"
                 )
         else:
             raise serializers.ValidationError(

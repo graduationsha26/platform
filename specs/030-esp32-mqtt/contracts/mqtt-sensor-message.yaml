@@ -1,0 +1,170 @@
+asyncapi: "2.6.0"
+info:
+  title: TremoAI Glove Sensor MQTT Contract
+  version: "2.0.0"
+  description: >
+    MQTT message contract for the TremoAI smart glove's sensor data stream.
+    Feature 030 introduces the canonical topic structure and payload format
+    that replaces the legacy `devices/{serial}/reading` topic.
+
+servers:
+  development:
+    url: mqtt://localhost:1883
+    protocol: mqtt
+    description: Local Mosquitto broker for development
+
+channels:
+  tremo/sensors/{deviceId}:
+    description: >
+      Per-device sensor data stream. Published by the ESP32 glove firmware at
+      30–50 Hz with QoS 1. Subscribed to by the Django backend using the
+      wildcard `tremo/sensors/+`.
+    parameters:
+      deviceId:
+        description: >
+          Device serial number. Must match Device.serial_number in the Django
+          database. Format: 8–20 uppercase alphanumeric characters (e.g. GLOVE001A).
+        schema:
+          type: string
+          pattern: "^[A-Z0-9]{8,20}$"
+          example: "GLOVE001A"
+    publish:
+      operationId: publishSensorReading
+      summary: Glove publishes one sensor snapshot
+      description: >
+        Published by the ESP32 firmware on every MQTT publish cycle (~33 Hz).
+        The QoS 1 delivery guarantee ensures at-least-once receipt by the broker.
+      bindings:
+        mqtt:
+          qos: 1
+          retain: false
+      message:
+        $ref: "#/components/messages/SensorReading"
+    subscribe:
+      operationId: receiveSensorReading
+      summary: Backend receives and processes sensor snapshots
+      description: >
+        Received by the Django MQTT client (backend/realtime/mqtt_client.py).
+        The handler validates the payload, looks up the device, and forwards
+        data to the WebSocket consumer group.
+      bindings:
+        mqtt:
+          qos: 1
+      message:
+        $ref: "#/components/messages/SensorReading"
+
+components:
+  messages:
+    SensorReading:
+      name: SensorReading
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/SensorReadingPayload"
+      examples:
+        - name: Normal operation
+          payload:
+            device_id: "GLOVE001A"
+            timestamp: "2026-02-18T10:30:00.123Z"
+            aX: 0.1234
+            aY: -0.0456
+            aZ: 9.7654
+            gX: 12.345
+            gY: -5.678
+            gZ: 0.123
+            battery_level: 87.5
+        - name: Low battery
+          payload:
+            device_id: "GLOVE001A"
+            timestamp: "2026-02-18T11:45:00.000Z"
+            aX: 0.0
+            aY: 0.0
+            aZ: 9.80665
+            gX: 0.0
+            gY: 0.0
+            gZ: 0.0
+            battery_level: 4.2
+
+  schemas:
+    SensorReadingPayload:
+      type: object
+      required:
+        - device_id
+        - timestamp
+        - aX
+        - aY
+        - aZ
+        - gX
+        - gY
+        - gZ
+        - battery_level
+      properties:
+        device_id:
+          type: string
+          pattern: "^[A-Z0-9]{8,20}$"
+          description: >
+            Device serial number. Matches Device.serial_number in the backend
+            database. Must be pre-registered in Django admin before data will
+            be accepted.
+          example: "GLOVE001A"
+        timestamp:
+          type: string
+          format: date-time
+          description: >
+            ISO 8601 UTC timestamp of when the reading was captured.
+            Millisecond precision when NTP is synced; elapsed-since-boot
+            fallback when NTP is unavailable.
+          example: "2026-02-18T10:30:00.123Z"
+        aX:
+          type: number
+          description: X-axis linear acceleration (m/s²). Expected range -20 to +20.
+          example: 0.1234
+        aY:
+          type: number
+          description: Y-axis linear acceleration (m/s²). Expected range -20 to +20.
+          example: -0.0456
+        aZ:
+          type: number
+          description: Z-axis linear acceleration (m/s²). Expected range -20 to +20.
+          example: 9.7654
+        gX:
+          type: number
+          description: X-axis angular velocity (°/s). Expected range -2000 to +2000.
+          example: 12.345
+        gY:
+          type: number
+          description: Y-axis angular velocity (°/s). Expected range -2000 to +2000.
+          example: -5.678
+        gZ:
+          type: number
+          description: Z-axis angular velocity (°/s). Expected range -2000 to +2000.
+          example: 0.123
+        battery_level:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+          description: >
+            Battery charge percentage (0.0 = empty, 100.0 = full).
+            Derived from ADC voltage reading mapped over the LiPo discharge
+            curve (3.0 V = 0 %, 4.2 V = 100 %). Clamped at firmware level.
+          example: 87.5
+
+  # Backend validation rules (informational)
+  x-backend-validation:
+    device_id:
+      - type: string
+      - length: 8–20 characters
+      - format: uppercase alphanumeric
+      - lookup: must exist in Device table with a paired patient
+    timestamp:
+      - type: ISO 8601 string
+      - parseable by datetime.fromisoformat()
+    aX_aY_aZ:
+      - type: numeric (int or float)
+      - out-of-range values: accepted with WARNING log, not rejected
+    gX_gY_gZ:
+      - type: numeric (int or float)
+      - out-of-range values: accepted with WARNING log, not rejected
+    battery_level:
+      - type: numeric (int or float)
+      - range: 0–100
+      - out-of-range values: clamped/warned, not rejected

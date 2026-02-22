@@ -1,0 +1,139 @@
+openapi: "3.0.3"
+info:
+  title: TremoAI Analytics — Dashboard Stats
+  version: "1.0.0"
+  description: >
+    Endpoint returning system-wide summary metrics and 7-day tremor trend
+    for the logged-in doctor's patient cohort.
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+
+paths:
+  /analytics/dashboard/:
+    get:
+      operationId: getDashboardStats
+      summary: Get doctor dashboard summary statistics
+      description: >
+        Returns total patient count, active device count, alerts count (severe
+        ML predictions in the last 24 hours), and a 7-day tremor trend —
+        all scoped to the authenticated doctor's assigned patients.
+      tags:
+        - Analytics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Dashboard statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+              example:
+                total_patients: 12
+                active_devices: 3
+                alerts_count: 2
+                tremor_trend:
+                  - date: "2026-02-14"
+                    avg_amplitude: 0.45
+                  - date: "2026-02-15"
+                    avg_amplitude: 0.52
+                  - date: "2026-02-16"
+                    avg_amplitude: null
+                  - date: "2026-02-17"
+                    avg_amplitude: 0.38
+                  - date: "2026-02-18"
+                    avg_amplitude: 0.61
+                  - date: "2026-02-19"
+                    avg_amplitude: 0.44
+                  - date: "2026-02-20"
+                    avg_amplitude: 0.33
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: "Authentication credentials were not provided."
+        "403":
+          description: Doctor role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: "You do not have permission to perform this action."
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    TremorTrendPoint:
+      type: object
+      required:
+        - date
+        - avg_amplitude
+      properties:
+        date:
+          type: string
+          format: date
+          description: Calendar date (YYYY-MM-DD)
+          example: "2026-02-20"
+        avg_amplitude:
+          type: number
+          format: float
+          nullable: true
+          description: >
+            Mean dominant tremor amplitude across all the doctor's patients
+            for this day. Null if no TremorMetrics data exists for this day.
+          example: 0.45
+
+    DashboardStats:
+      type: object
+      required:
+        - total_patients
+        - active_devices
+        - alerts_count
+        - tremor_trend
+      properties:
+        total_patients:
+          type: integer
+          minimum: 0
+          description: Total number of patients assigned to the logged-in doctor
+          example: 12
+        active_devices:
+          type: integer
+          minimum: 0
+          description: Count of devices with status='online' across the doctor's patients
+          example: 3
+        alerts_count:
+          type: integer
+          minimum: 0
+          description: >
+            Count of BiometricSession records with ml_prediction.severity='severe'
+            in the last 24 hours, across the doctor's patients
+          example: 2
+        tremor_trend:
+          type: array
+          description: >
+            Exactly 7 data points representing daily average tremor amplitude
+            from 6 days ago through today, ordered chronologically.
+          minItems: 7
+          maxItems: 7
+          items:
+            $ref: "#/components/schemas/TremorTrendPoint"
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message

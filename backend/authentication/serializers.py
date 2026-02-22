@@ -48,11 +48,6 @@ class RegisterSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("User with this email already exists.", code='unique_email')
         return value
 
-    def validate_role(self, value):
-        if value not in ['doctor', 'patient']:
-            raise serializers.ValidationError("Role must be either 'doctor' or 'patient'.")
-        return value
-
     def create(self, validated_data):
         validated_data.pop('password_confirm')
         user = CustomUser.objects.create_user(
@@ -60,7 +55,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             password=validated_data['password'],
             first_name=validated_data['first_name'],
             last_name=validated_data['last_name'],
-            role=validated_data['role']
+            role=validated_data.get('role', 'doctor')
         )
         return user
 

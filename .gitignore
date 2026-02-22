@@ -88,3 +88,8 @@ backend/model_comparison/reports/charts/*.png
 backend/model_comparison/decisions/*.md
 backend/model_comparison/decisions/*.pdf
 !backend/model_comparison/decisions/.gitkeep
+
+# Firmware (Feature 025)
+firmware/include/config.h
+firmware/.pio/
+firmware/.vscode/

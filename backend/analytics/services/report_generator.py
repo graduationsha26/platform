@@ -119,7 +119,7 @@ class PDFReportGenerator:
         # Patient information table
         patient_data = [
             ['Patient ID:', str(self.patient.id)],
-            ['Patient Name:', f"{self.patient.user.first_name} {self.patient.user.last_name}"],
+            ['Patient Name:', self.patient.full_name],
             ['Date of Birth:', str(self.patient.date_of_birth) if self.patient.date_of_birth else 'N/A'],
             ['Report Period:', f"{self.start_date or 'All'} to {self.end_date or 'Present'}"],
             ['Generated:', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],

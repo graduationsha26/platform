@@ -67,12 +67,12 @@ This constitution defines the non-negotiable architectural and technical princip
 
 **Non-negotiable constraints**:
 - JWT tokens for authentication (no session-based auth)
-- Two roles: `patient` and `doctor`
+- Two roles: `doctor` and `admin`
 - Role-based access control enforced at API endpoint level
 - Tokens must include user role in payload
 - Frontend must store tokens securely and include in API requests
 
-**Rationale**: JWT provides stateless authentication suitable for real-time applications, role-based access ensures proper data isolation between patients and doctors.
+**Rationale**: JWT provides stateless authentication suitable for real-time applications, role-based access ensures proper access control for doctors and platform administrators.
 
 ### V. Security-First Configuration
 

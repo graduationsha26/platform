@@ -1,0 +1,109 @@
+/**
+ * config.h.example — TremoAI Smart Glove Firmware Configuration Template
+ *
+ * SETUP INSTRUCTIONS:
+ *   1. Copy this file to firmware/include/config.h
+ *   2. Fill in all placeholder values below
+ *   3. DO NOT commit config.h to version control (it is .gitignored)
+ *
+ * Feature: 025-imu-kalman-fusion (IMU + Kalman filter)
+ * Feature: 030-esp32-mqtt       (WiFi + MQTT publish pipeline)
+ * Feature: 031-freertos-scheduler (FreeRTOS tasks, PID tremor control, CMG actuation)
+ */
+
+#pragma once
+
+// ─── Device Identity ─────────────────────────────────────────────────────────
+// Must match the serial number registered in the TremoAI Django admin
+// Format: 8–20 uppercase alphanumeric characters (e.g., "GLOVE001A")
+#define DEVICE_SERIAL   "YOUR_DEVICE_SERIAL"
+
+// ─── WiFi Credentials ────────────────────────────────────────────────────────
+#define WIFI_SSID       "your_wifi_ssid"
+#define WIFI_PASSWORD   "your_wifi_password"
+
+// ─── MQTT Broker ─────────────────────────────────────────────────────────────
+// Point to the host running the Mosquitto broker.
+// In development: typically the same machine running Django backend.
+#define MQTT_BROKER_HOST  "192.168.1.100"   // Replace with broker LAN IP
+#define MQTT_BROKER_PORT  1883
+#define MQTT_USERNAME     ""                 // Leave empty if no auth required
+#define MQTT_PASSWORD     ""                 // Leave empty if no auth required
+
+// ─── IMU Sampling ─────────────────────────────────────────────────────────────
+#define IMU_SAMPLE_RATE_HZ    100            // Target: 100 Hz (Kalman filter input rate)
+#define IMU_SAMPLE_PERIOD_MS  10             // 1000 / IMU_SAMPLE_RATE_HZ
+
+// ─── MQTT Publish Rate ────────────────────────────────────────────────────────
+// IMU runs at 100 Hz; MQTT publishes at a lower rate to meet 30-50 Hz spec.
+// A millis() guard in loop() throttles publish to this rate.
+// Default 33 Hz → 1 publish every ~30 ms (within 30-50 Hz spec).
+#define MQTT_PUBLISH_RATE_HZ  33             // Target: 30-50 Hz per spec
+
+// ─── Battery ADC ──────────────────────────────────────────────────────────────
+// MUST be an ADC1 pin (GPIO32–39). ADC2 pins are unreliable when WiFi is active.
+// Default: GPIO34 (input-only, no conflicts, ADC1 channel 6).
+//
+// Wiring: Battery+ → R1 (100kΩ) → BATTERY_ADC_PIN → R2 (47kΩ) → GND
+//   Divider ratio = R2 / (R1 + R2) = 47 / (100 + 47) ≈ 0.3197
+//   At 4.2V (full): ADC pin sees 4.2 × 0.3197 ≈ 1.34V (within 0–3.3V range)
+//   At 3.0V (empty): ADC pin sees 3.0 × 0.3197 ≈ 0.96V
+//
+// analogSetAttenuation(ADC_11db) must be called in battery_init() to cover 0–3.3V.
+#define BATTERY_ADC_PIN       34             // GPIO34 — ADC1 channel 6 (input-only)
+#define BATTERY_DIVIDER_RATIO (47.0f / 147.0f)   // R2 / (R1 + R2) — adjust for your resistors
+#define BATTERY_V_MIN         3.0f          // LiPo empty voltage (0%)
+#define BATTERY_V_MAX         4.2f          // LiPo full voltage (100%)
+
+// ─── Startup Calibration ──────────────────────────────────────────────────────
+// Collect CALIB_N_SAMPLES samples (glove must be stationary during this window)
+// At 100 Hz, 500 samples = 5 seconds of stationary data
+#define CALIB_N_SAMPLES         500
+// Motion guard: if gyro range (max-min) over window exceeds threshold * 5.0 deg/s, calibration fails
+#define GYRO_MOTION_THRESHOLD   1.0f        // deg/s per-sample threshold
+
+// ─── Kalman Filter Tuning ─────────────────────────────────────────────────────
+// Default values from Lauszus reference implementation.
+// Tune R_measure up (0.05–0.15) if output is jittery during hand movement.
+// Tune Q_bias up if gyro drift changes rapidly (temperature swings).
+#define KF_Q_ANGLE          0.001f   // Process noise: angle state (deg^2)
+#define KF_Q_BIAS           0.003f   // Process noise: gyro bias drift (deg^2/s)
+#define KF_R_MEASURE        0.03f    // Measurement noise: static accel angle (deg^2)
+#define KF_R_MEASURE_DYNAMIC 0.09f  // Measurement noise during dynamic motion (3x static)
+// Dynamic threshold: if |‖a‖ - 9.80665| > 2.943 m/s² (≈0.3g), use KF_R_MEASURE_DYNAMIC
+#define KF_ACCEL_DYNAMIC_THRESHOLD_MS2  2.943f
+
+// ─── Hardware Pins ────────────────────────────────────────────────────────────
+// ESP32 default I2C pins. Change if your board uses different pins.
+#define I2C_SDA_PIN   21
+#define I2C_SCL_PIN   22
+#define I2C_FREQ_HZ   400000   // 400 kHz fast mode
+
+// LED pin for fault indication (optional, -1 to disable)
+#define FAULT_LED_PIN   2      // ESP32 built-in LED on GPIO 2
+
+// ─── CMG Actuation ────────────────────────────────────────────────────────────
+// Two LEDC channels: gimbal servo (PID-driven) + flywheel ESC (constant speed)
+#define CMG_GIMBAL_PIN        18      // GPIO18 — gimbal servo signal
+#define CMG_GIMBAL_CHANNEL     0      // LEDC channel 0
+#define CMG_FLYWHEEL_PIN      19      // GPIO19 — flywheel ESC signal
+#define CMG_FLYWHEEL_CHANNEL   1      // LEDC channel 1
+#define CMG_PWM_FREQ_HZ       50      // 50Hz (servo/ESC standard)
+#define CMG_PWM_RESOLUTION    16      // 16-bit duty (0–65535); duty = pulse_us × 65536 / 20000
+#define CMG_GIMBAL_MAX_DEG  60.0f     // ±60° gimbal range (avoid gimbal lock at ±90°)
+#define CMG_FLYWHEEL_DUTY   5243      // ~1600µs constant flywheel throttle (tune per ESC)
+
+// ─── PID Controller Tuning ────────────────────────────────────────────────────
+// Feedback: gyro angular velocity (gX for roll-rate, gY for pitch-rate), setpoint = 0 deg/s
+// Tuning targets for Parkinsonian tremor (4–8Hz oscillation):
+#define PID_KP               1.0f    // Proportional gain — start here, increase to oscillation limit then -30%
+#define PID_KI               0.01f   // Integral gain — very small; increase only if DC drift observed
+#define PID_KD               0.03f   // Derivative gain — primary damping term
+#define PID_TAU              0.008f  // Derivative LPF time constant (fc ≈ 20Hz)
+#define PID_OUTPUT_MIN      -1.0f    // Normalized output min (maps to -60° gimbal)
+#define PID_OUTPUT_MAX       1.0f    // Normalized output max (maps to +60° gimbal)
+
+// ─── FreeRTOS Task Stack Sizes ────────────────────────────────────────────────
+#define SENSOR_TASK_STACK   6144     // bytes — IMU read + Kalman filter + I2C driver call depth
+#define CONTROL_TASK_STACK  4096     // bytes — PID computation + CMG LEDC write
+#define MQTT_TASK_STACK     8192     // bytes — JSON serialization + MQTT library

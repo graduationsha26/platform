@@ -1,0 +1,111 @@
+openapi: "3.0.3"
+info:
+  title: CMG Gimbal State API
+  version: "1.0"
+  description: >
+    Endpoint for reading the current (latest) gimbal position and axis status
+    for a device. Updated by the MQTT servo_state pipeline; also broadcast
+    live via WebSocket. Part of Feature 028: CMG Gimbal Servo Control.
+
+paths:
+  /api/cmg/servo/state/{device_pk}/:
+    get:
+      summary: Get current gimbal position and axis status
+      description: >
+        Returns the most recently received servo state for the specified device.
+        Returns 404 if the device has never published a servo_state MQTT message.
+        Both doctors and patients associated with the device may read this endpoint.
+        Live updates are available via WebSocket (type: servo_state).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: device_pk
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Primary key of the Device
+      responses:
+        "200":
+          description: Latest gimbal state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GimbalState'
+              example:
+                device_id: 5
+                pitch_deg: 12.4
+                roll_deg: -3.1
+                pitch_status: moving
+                roll_status: idle
+                device_timestamp: "2026-02-19T10:30:00.000Z"
+                received_at: "2026-02-19T10:30:00.050Z"
+        "403":
+          description: Access denied
+          content:
+            application/json:
+              example: { "error": "Access denied." }
+        "404":
+          description: Device not found or no state received yet
+          content:
+            application/json:
+              example: { "error": "No gimbal state available for this device yet." }
+
+components:
+  schemas:
+    GimbalState:
+      type: object
+      properties:
+        device_id:
+          type: integer
+        pitch_deg:
+          type: number
+          format: float
+          description: Current pitch angle in degrees
+        roll_deg:
+          type: number
+          format: float
+          description: Current roll angle in degrees
+        pitch_status:
+          type: string
+          enum: [idle, moving, fault]
+          description: Operational status of the pitch axis
+        roll_status:
+          type: string
+          enum: [idle, moving, fault]
+          description: Operational status of the roll axis
+        device_timestamp:
+          type: string
+          format: date-time
+          description: Timestamp reported by the glove device
+        received_at:
+          type: string
+          format: date-time
+          description: When the platform last received a state update
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+# WebSocket contract (informational — not OpenAPI standard)
+# ─────────────────────────────────────────────────────────
+# Connection: ws://localhost:8000/ws/tremor/
+# Authentication: JWT bearer token (same as REST API)
+# Channel group: patient_{patient_id}_tremor_data
+#
+# Incoming message type: "servo_state"
+# Payload example:
+# {
+#   "type": "servo_state",
+#   "device_serial": "ABC12345",
+#   "patient_id": 3,
+#   "pitch_deg": 12.4,
+#   "roll_deg": -3.1,
+#   "pitch_status": "moving",
+#   "roll_status": "idle",
+#   "device_timestamp": "2026-02-19T10:30:00.000Z"
+# }
+#
+# Frequency: 10–50 Hz (matches device servo_state publish rate)

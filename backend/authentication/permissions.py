@@ -16,15 +16,15 @@ class IsDoctor(permissions.BasePermission):
         )
 
 
-class IsPatient(permissions.BasePermission):
-    """Permission class that only allows patients."""
-    message = "Only patients can perform this action."
+class IsDoctorOrAdmin(permissions.BasePermission):
+    """Permission class that allows doctors or admins."""
+    message = "Only doctors or admins can perform this action."
 
     def has_permission(self, request, view):
         return (
             request.user and
             request.user.is_authenticated and
-            request.user.role == 'patient'
+            request.user.role in ('doctor', 'admin')
         )
 
 
@@ -39,8 +39,6 @@ class IsOwnerOrDoctor(permissions.BasePermission):
         if request.user.role == 'doctor':
             return True
         if hasattr(obj, 'user') and obj.user == request.user:
-            return True
-        if hasattr(obj, 'patient') and hasattr(obj.patient, 'user') and obj.patient.user == request.user:
             return True
         if obj == request.user:
             return True

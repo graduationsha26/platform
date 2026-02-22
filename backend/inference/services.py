@@ -262,7 +262,7 @@ class PreprocessingService:
         Preprocess data for ML models (RF, SVM).
 
         Args:
-            data: Input features (should be 18 features)
+            data: Input features (6 raw sensor features [aX, aY, aZ, gX, gY, gZ])
             metadata: Model metadata with StandardScaler parameters
 
         Returns:
@@ -271,7 +271,7 @@ class PreprocessingService:
         # Ensure data is numpy array
         data = np.array(data)
 
-        # For ML models, data should already be 18 engineered features
+        # For ML models, data should be 6 raw sensor features [aX, aY, aZ, gX, gY, gZ]
         # Apply StandardScaler if scaler params exist in metadata
         if 'preprocessing' in metadata and 'scaler_params' in metadata['preprocessing']:
             scaler_params = metadata['preprocessing']['scaler_params']

@@ -6,20 +6,20 @@ from typing import Tuple
 from .exceptions import InvalidInputError
 
 
-def validate_ml_input_shape(data: np.ndarray, expected_features: int = 18):
+def validate_ml_input_shape(data: np.ndarray, expected_features: int = 6):
     """
     Validate input shape for ML models (RF, SVM).
 
     Args:
         data: Input data array
-        expected_features: Expected number of features (default: 18)
+        expected_features: Expected number of features (default: 6)
 
     Raises:
         InvalidInputError: If shape doesn't match expected format
     """
     data = np.array(data)
 
-    # ML models expect 1D array with 18 features (or 2D with shape (1, 18))
+    # ML models expect 1D array with 6 features [aX, aY, aZ, gX, gY, gZ] (or 2D with shape (1, 6))
     if data.ndim == 1:
         if len(data) != expected_features:
             raise InvalidInputError(

@@ -9,10 +9,16 @@ from .models import Patient, DoctorPatientAssignment
 class PatientListSerializer(serializers.ModelSerializer):
     """Read-only serializer for patient list view."""
 
+    last_session_date = serializers.SerializerMethodField()
+
     class Meta:
         model = Patient
-        fields = ['id', 'full_name', 'date_of_birth', 'contact_email', 'created_at']
+        fields = ['id', 'full_name', 'date_of_birth', 'contact_email', 'created_at', 'last_session_date']
         read_only_fields = fields
+
+    def get_last_session_date(self, obj):
+        result = obj.biometric_sessions.order_by('-session_start').values('session_start').first()
+        return result['session_start'].isoformat() if result else None
 
 
 class CreatedBySerializer(serializers.ModelSerializer):

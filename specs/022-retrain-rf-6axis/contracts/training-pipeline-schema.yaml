@@ -1,0 +1,105 @@
+# Training Pipeline Schema: Retrain RF on 6 Axes (Feature 022)
+# This is not an API contract — Feature 022 adds no new REST endpoints.
+# This document describes the CLI interface and model I/O contracts.
+
+---
+
+## CLI Contract: train.py (updated)
+
+command: python apps/ml/train.py
+run_from: backend/
+arguments:
+  --dataset:
+    type: string
+    default: "../Dataset.csv"
+    description: Path to Dataset.csv (relative to backend/ or absolute)
+  --output:
+    type: string
+    default: "ml_models"
+    description: Directory to write rf_model.pkl and metrics JSON
+  --test-size:
+    type: float
+    default: 0.2
+    description: Fraction of data held out for test evaluation
+  --models:
+    type: list[string]
+    choices: [rf, svm, all]
+    default: [all]
+    description: Which models to train; use 'rf' to train only Random Forest
+
+example_invocations:
+  - "python apps/ml/train.py --dataset ../Dataset.csv --output ml_models --models rf"
+  - "python apps/ml/train.py --dataset ../Dataset.csv --output ml_models"
+
+stdout_output:
+  - Dataset loading confirmation with sample count and feature count
+  - GridSearchCV progress (param combinations, CV scores)
+  - Best hyperparameters selected
+  - Best cross-validation accuracy
+  - Test set classification report (accuracy, per-class precision/recall/F1)
+  - Feature importances for all 6 axes
+  - Export path confirmation for rf_model.pkl and metrics JSON
+  - Validation check: F1 score vs threshold (0.85)
+
+exit_codes:
+  0: Training completed successfully; model artifact written
+  1: Error (FileNotFoundError, ValueError, or unexpected exception)
+
+---
+
+## Model Artifact Contract: rf_model.pkl
+
+file: backend/ml_models/rf_model.pkl
+format: joblib-serialized sklearn RandomForestClassifier
+required_attributes:
+  n_features_in_: 6
+  predict(X): "X must be shape (n_samples, 6); returns class labels"
+  predict_proba(X): "X must be shape (n_samples, 6); returns probabilities"
+
+validation:
+  code: validate_sklearn_model('ml_models/rf_model.pkl', expected_features=6)
+  location: backend/apps/ml/validate_models.py
+  assertion: model.n_features_in_ == 6
+
+---
+
+## Model Metrics Contract: rf_model_metrics.json
+
+file: backend/ml_models/rf_model_metrics.json
+format: JSON
+schema:
+  model_type: "Random Forest"
+  accuracy: float          # test set accuracy (0.0-1.0)
+  f1_score: float          # weighted F1 on test set (0.0-1.0)
+  n_features: 6            # always 6
+  feature_names: ["aX", "aY", "aZ", "gX", "gY", "gZ"]
+  feature_importance: {"aX": float, "aY": float, "aZ": float, "gX": float, "gY": float, "gZ": float}
+  best_params:             # NEW — from GridSearchCV
+    n_estimators: int
+    max_depth: "int | null"
+  best_cv_score: float     # NEW — GridSearchCV best CV accuracy
+  trained_date: string     # ISO 8601
+
+---
+
+## Inference Pipeline Integration Contract
+
+# After training, predict.py must find rf_model.pkl at the expected path.
+# The only change to predict.py is in the model_files dict.
+
+predict_py_change:
+  file: backend/apps/ml/predict.py
+  line: "model_files = {'rf': 'random_forest.pkl', 'svm': 'svm.pkl'}"
+  change_to: "model_files = {'rf': 'rf_model.pkl', 'svm': 'svm.pkl'}"
+
+inference_input:
+  type: "list[float] or np.ndarray"
+  shape: (6,)
+  order: [aX, aY, aZ, gX, gY, gZ]
+  units: "raw sensor values (not normalized)"
+
+inference_output:
+  prediction: int          # class label (tremor severity class)
+  confidence: float        # predict_proba value for predicted class (0.0-1.0)
+  model_type: "RF"
+  latency_ms: float        # inference time in ms

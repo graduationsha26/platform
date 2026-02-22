@@ -1,0 +1,215 @@
+openapi: "3.0.3"
+info:
+  title: CMG Servo Calibration API
+  version: "1.0"
+  description: >
+    Endpoints for doctors to read and update gimbal servo calibration for a
+    specific device. Calibration includes center positions and travel range for
+    pitch and roll axes, plus the per-device rate limit.
+    Part of Feature 028: CMG Gimbal Servo Control.
+
+paths:
+  /api/cmg/servo/calibration/{device_pk}/:
+    get:
+      summary: Retrieve current calibration for a device
+      description: >
+        Returns the calibration record for the specified device. If no calibration
+        has been set, returns defaults (center=0, ±30° pitch, ±20° roll, 45 deg/s).
+        Both doctors and patients associated with the device may read calibration.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: device_pk
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Primary key of the Device
+      responses:
+        "200":
+          description: Calibration record (actual or defaults if not yet calibrated)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GimbalCalibration'
+              example:
+                device_id: 5
+                pitch_center_deg: 0.0
+                roll_center_deg: 0.0
+                pitch_min_deg: -30.0
+                pitch_max_deg: 30.0
+                roll_min_deg: -20.0
+                roll_max_deg: 20.0
+                rate_limit_deg_per_sec: 45.0
+                updated_at: "2026-02-19T10:00:00Z"
+                updated_by_id: null
+        "403":
+          description: Doctor does not have access to this device's patient
+          content:
+            application/json:
+              example: { "error": "Access denied." }
+        "404":
+          description: Device not found
+          content:
+            application/json:
+              example: { "error": "Device not found." }
+
+    put:
+      summary: Set (upsert) calibration for a device
+      description: >
+        Creates or fully replaces the calibration for the specified device.
+        Publishes updated calibration to the device as a retained MQTT servo_config
+        message after successful save. Only doctors may update calibration.
+        Responds with 201 on first creation, 200 on update.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: device_pk
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GimbalCalibrationInput'
+            example:
+              pitch_center_deg: 2.5
+              roll_center_deg: -1.0
+              pitch_min_deg: -40.0
+              pitch_max_deg: 40.0
+              roll_min_deg: -25.0
+              roll_max_deg: 25.0
+              rate_limit_deg_per_sec: 60.0
+      responses:
+        "200":
+          description: Calibration updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GimbalCalibration'
+        "201":
+          description: Calibration created for the first time
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GimbalCalibration'
+        "400":
+          description: Validation error (min >= max, rate limit out of bounds, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+              examples:
+                min_gte_max:
+                  value:
+                    pitch_min_deg: ["pitch_min_deg (-30.0) must be strictly less than pitch_max_deg (-30.0)."]
+                rate_limit_too_high:
+                  value:
+                    rate_limit_deg_per_sec: ["Rate limit cannot exceed system maximum of 180.0 deg/s."]
+        "403":
+          description: Only doctors may update calibration
+          content:
+            application/json:
+              example: { "error": "Only doctors can update calibration." }
+        "404":
+          description: Device not found
+          content:
+            application/json:
+              example: { "error": "Device not found." }
+
+components:
+  schemas:
+    GimbalCalibration:
+      type: object
+      properties:
+        device_id:
+          type: integer
+        pitch_center_deg:
+          type: number
+          format: float
+        roll_center_deg:
+          type: number
+          format: float
+        pitch_min_deg:
+          type: number
+          format: float
+        pitch_max_deg:
+          type: number
+          format: float
+        roll_min_deg:
+          type: number
+          format: float
+        roll_max_deg:
+          type: number
+          format: float
+        rate_limit_deg_per_sec:
+          type: number
+          format: float
+        updated_at:
+          type: string
+          format: date-time
+        updated_by_id:
+          type: integer
+          nullable: true
+
+    GimbalCalibrationInput:
+      type: object
+      required:
+        - pitch_center_deg
+        - roll_center_deg
+        - pitch_min_deg
+        - pitch_max_deg
+        - roll_min_deg
+        - roll_max_deg
+        - rate_limit_deg_per_sec
+      properties:
+        pitch_center_deg:
+          type: number
+          format: float
+          minimum: -180.0
+          maximum: 180.0
+        roll_center_deg:
+          type: number
+          format: float
+          minimum: -180.0
+          maximum: 180.0
+        pitch_min_deg:
+          type: number
+          format: float
+          minimum: -180.0
+          maximum: 180.0
+        pitch_max_deg:
+          type: number
+          format: float
+          minimum: -180.0
+          maximum: 180.0
+        roll_min_deg:
+          type: number
+          format: float
+          minimum: -180.0
+          maximum: 180.0
+        roll_max_deg:
+          type: number
+          format: float
+          minimum: -180.0
+          maximum: 180.0
+        rate_limit_deg_per_sec:
+          type: number
+          format: float
+          description: Must be within GIMBAL_RATE_LIMIT_MIN and GIMBAL_RATE_LIMIT_MAX from .env
+
+    ValidationErrors:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

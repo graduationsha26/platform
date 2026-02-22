@@ -1,0 +1,2 @@
+# This file preserves the empty models/ directory in git
+# Trained model files (.pkl and .json) are gitignored

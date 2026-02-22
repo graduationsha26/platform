@@ -120,3 +120,88 @@ class BiometricSession(models.Model):
         """Override save to call full_clean for validation."""
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+class BiometricReading(models.Model):
+    """Individual timestamped sensor reading from a patient's wearable glove."""
+
+    patient = models.ForeignKey(
+        'patients.Patient',
+        on_delete=models.CASCADE,
+        related_name='biometric_readings'
+    )
+    timestamp = models.DateTimeField()
+
+    # Raw sensor values (6 features from accelerometer + gyroscope)
+    aX = models.FloatField()  # Accelerometer X-axis
+    aY = models.FloatField()  # Accelerometer Y-axis
+    aZ = models.FloatField()  # Accelerometer Z-axis
+    gX = models.FloatField()  # Gyroscope X-axis
+    gY = models.FloatField()  # Gyroscope Y-axis
+    gZ = models.FloatField()  # Gyroscope Z-axis
+
+    class Meta:
+        db_table = 'biometric_readings'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['patient', 'timestamp']),
+            models.Index(fields=['timestamp']),
+        ]
+
+    def __str__(self):
+        return f"BiometricReading(patient={self.patient_id}, ts={self.timestamp})"
+
+
+class TremorMetrics(models.Model):
+    """FFT analysis result for one 2.56-second window of filtered biometric data.
+
+    Produced approximately once per second per active glove session by the
+    TremorFilterService in the MQTT pipeline. Stores dominant tremor frequency
+    and per-axis amplitude/frequency for all 6 IMU axes.
+    """
+
+    AXIS_CHOICES = [
+        ('aX', 'aX'), ('aY', 'aY'), ('aZ', 'aZ'),
+        ('gX', 'gX'), ('gY', 'gY'), ('gZ', 'gZ'),
+    ]
+
+    patient = models.ForeignKey(
+        'patients.Patient',
+        on_delete=models.CASCADE,
+        related_name='tremor_metrics'
+    )
+    window_start = models.DateTimeField()
+    window_end = models.DateTimeField()
+    tremor_detected = models.BooleanField()
+    dominant_axis = models.CharField(max_length=3, choices=AXIS_CHOICES)
+    dominant_freq_hz = models.FloatField(null=True, blank=True)
+    dominant_amplitude = models.FloatField()
+
+    # Per-axis peak amplitudes in the 3-8 Hz band
+    amp_aX = models.FloatField()
+    amp_aY = models.FloatField()
+    amp_aZ = models.FloatField()
+    amp_gX = models.FloatField()
+    amp_gY = models.FloatField()
+    amp_gZ = models.FloatField()
+
+    # Per-axis dominant frequencies (null when amplitude is below threshold)
+    freq_aX = models.FloatField(null=True, blank=True)
+    freq_aY = models.FloatField(null=True, blank=True)
+    freq_aZ = models.FloatField(null=True, blank=True)
+    freq_gX = models.FloatField(null=True, blank=True)
+    freq_gY = models.FloatField(null=True, blank=True)
+    freq_gZ = models.FloatField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'tremor_metrics'
+        ordering = ['-window_start']
+        indexes = [
+            models.Index(fields=['patient', 'window_start']),
+            models.Index(fields=['window_start']),
+        ]
+
+    def __str__(self):
+        return f"TremorMetrics(patient={self.patient_id}, window_start={self.window_start}, detected={self.tremor_detected})"

@@ -1,0 +1,374 @@
+openapi: "3.0.3"
+info:
+  title: TremoAI — Tremor Metrics API
+  description: >
+    REST endpoints for querying computed tremor metrics (band-pass filtered
+    FFT analysis results) for patients. Metrics are produced automatically
+    by the MQTT pipeline at ~1 Hz while the glove is streaming.
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    TremorMetrics:
+      type: object
+      description: >
+        One FFT analysis window result for a patient.
+        Produced approximately once per second per active glove session.
+      required:
+        - id
+        - patient
+        - window_start
+        - window_end
+        - tremor_detected
+        - dominant_axis
+        - dominant_amplitude
+        - amp_aX
+        - amp_aY
+        - amp_aZ
+        - amp_gX
+        - amp_gY
+        - amp_gZ
+        - created_at
+      properties:
+        id:
+          type: integer
+          description: Auto-incrementing primary key
+          example: 1042
+        patient:
+          type: integer
+          description: Patient ID
+          example: 7
+        window_start:
+          type: string
+          format: date-time
+          description: ISO 8601 UTC — start of the 2.56-second FFT analysis window
+          example: "2026-02-18T10:30:00.000Z"
+        window_end:
+          type: string
+          format: date-time
+          description: ISO 8601 UTC — end of the FFT analysis window
+          example: "2026-02-18T10:30:02.560Z"
+        tremor_detected:
+          type: boolean
+          description: True if any axis amplitude exceeds the no-tremor threshold
+          example: true
+        dominant_axis:
+          type: string
+          enum: [aX, aY, aZ, gX, gY, gZ]
+          description: Axis with the highest 3-8 Hz amplitude
+          example: "aX"
+        dominant_freq_hz:
+          type: number
+          format: float
+          nullable: true
+          description: >
+            Dominant tremor frequency (Hz) on the dominant axis.
+            Null when tremor_detected is false.
+          example: 5.27
+        dominant_amplitude:
+          type: number
+          format: float
+          description: >
+            Peak 3-8 Hz amplitude on the dominant axis.
+            Unit: m/s² for accelerometer axes, °/s for gyroscope axes.
+          example: 0.312
+        amp_aX:
+          type: number
+          format: float
+          description: Peak 3-8 Hz amplitude on accelerometer X-axis (m/s²)
+          example: 0.312
+        amp_aY:
+          type: number
+          format: float
+          description: Peak 3-8 Hz amplitude on accelerometer Y-axis (m/s²)
+          example: 0.089
+        amp_aZ:
+          type: number
+          format: float
+          description: Peak 3-8 Hz amplitude on accelerometer Z-axis (m/s²)
+          example: 0.041
+        amp_gX:
+          type: number
+          format: float
+          description: Peak 3-8 Hz amplitude on gyroscope X-axis (°/s)
+          example: 3.7
+        amp_gY:
+          type: number
+          format: float
+          description: Peak 3-8 Hz amplitude on gyroscope Y-axis (°/s)
+          example: 1.2
+        amp_gZ:
+          type: number
+          format: float
+          description: Peak 3-8 Hz amplitude on gyroscope Z-axis (°/s)
+          example: 0.4
+        freq_aX:
+          type: number
+          format: float
+          nullable: true
+          description: Dominant frequency on aX (Hz); null if amp_aX < threshold
+          example: 5.27
+        freq_aY:
+          type: number
+          format: float
+          nullable: true
+          description: Dominant frequency on aY (Hz); null if amp_aY < threshold
+          example: null
+        freq_aZ:
+          type: number
+          format: float
+          nullable: true
+          description: Dominant frequency on aZ (Hz); null if amp_aZ < threshold
+          example: null
+        freq_gX:
+          type: number
+          format: float
+          nullable: true
+          description: Dominant frequency on gX (Hz); null if amp_gX < threshold
+          example: 5.08
+        freq_gY:
+          type: number
+          format: float
+          nullable: true
+          description: Dominant frequency on gY (Hz); null if amp_gY < threshold
+          example: null
+        freq_gZ:
+          type: number
+          format: float
+          nullable: true
+          description: Dominant frequency on gZ (Hz); null if amp_gZ < threshold
+          example: null
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 UTC — when this record was inserted
+          example: "2026-02-18T10:30:02.600Z"
+
+    PaginatedTremorMetrics:
+      type: object
+      required: [count, results]
+      properties:
+        count:
+          type: integer
+          description: Total number of matching records
+          example: 300
+        next:
+          type: string
+          nullable: true
+          description: URL to next page (null if last page)
+        previous:
+          type: string
+          nullable: true
+          description: URL to previous page (null if first page)
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TremorMetrics'
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "patient_id parameter is required"
+
+paths:
+
+  /api/tremor-metrics/:
+    get:
+      summary: List tremor metrics for a patient
+      description: >
+        Returns paginated tremor metrics records for the specified patient,
+        ordered by window_start descending (most recent first).
+        Only accessible by authenticated doctors who have access to the patient.
+      operationId: listTremorMetrics
+      parameters:
+        - name: patient_id
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: ID of the patient to retrieve metrics for
+          example: 7
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+          description: Maximum number of results to return
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+          description: Number of results to skip (for pagination)
+        - name: tremor_detected
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Filter to only records where tremor was (or was not) detected
+      responses:
+        "200":
+          description: Paginated list of tremor metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTremorMetrics'
+              example:
+                count: 300
+                next: "http://localhost:8000/api/tremor-metrics/?patient_id=7&limit=100&offset=100"
+                previous: null
+                results:
+                  - id: 1042
+                    patient: 7
+                    window_start: "2026-02-18T10:30:02.560Z"
+                    window_end: "2026-02-18T10:30:05.120Z"
+                    tremor_detected: true
+                    dominant_axis: "aX"
+                    dominant_freq_hz: 5.27
+                    dominant_amplitude: 0.312
+                    amp_aX: 0.312
+                    amp_aY: 0.089
+                    amp_aZ: 0.041
+                    amp_gX: 3.7
+                    amp_gY: 1.2
+                    amp_gZ: 0.4
+                    freq_aX: 5.27
+                    freq_aY: null
+                    freq_aZ: null
+                    freq_gX: 5.08
+                    freq_gY: null
+                    freq_gZ: null
+                    created_at: "2026-02-18T10:30:05.220Z"
+        "400":
+          description: Missing or invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "patient_id parameter is required"
+        "401":
+          description: Unauthenticated request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "403":
+          description: Authenticated but not authorized to access this patient's data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/tremor-metrics/latest/:
+    get:
+      summary: Get the most recent tremor metrics for a patient
+      description: >
+        Returns the single most recently computed TremorMetrics record for
+        the specified patient. Useful for dashboard initial state on page load
+        before the WebSocket stream starts delivering live updates.
+      operationId: latestTremorMetrics
+      parameters:
+        - name: patient_id
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: ID of the patient
+          example: 7
+      responses:
+        "200":
+          description: Most recent tremor metrics record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TremorMetrics'
+        "400":
+          description: Missing patient_id parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "403":
+          description: Not authorized for this patient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "404":
+          description: No tremor metrics yet recorded for this patient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "No tremor metrics found for patient 7"
+
+  /ws/tremor/:
+    get:
+      summary: WebSocket — live tremor metrics stream
+      description: >
+        Django Channels WebSocket endpoint. After connecting and authenticating
+        (JWT in query param or subprotocol), the client joins the
+        `patient_{patient_id}_tremor_data` channel group and receives
+        tremor_metrics_update messages at ~1 Hz alongside existing tremor_data
+        (raw BiometricReading) messages.
+
+        **Connection URL**: `ws://localhost:8000/ws/tremor/`
+
+        **Message types received**:
+        - `tremor_data`: existing raw reading broadcast (100 Hz)
+        - `tremor_metrics_update`: new FFT result broadcast (~1 Hz)
+
+        **tremor_metrics_update message format**:
+        ```json
+        {
+          "type": "tremor_metrics_update",
+          "patient_id": 7,
+          "window_start": "2026-02-18T10:30:02.560Z",
+          "window_end":   "2026-02-18T10:30:05.120Z",
+          "tremor_detected": true,
+          "dominant_axis": "aX",
+          "dominant_freq_hz": 5.27,
+          "dominant_amplitude": 0.312,
+          "amplitudes": {
+            "aX": 0.312, "aY": 0.089, "aZ": 0.041,
+            "gX": 3.7,   "gY": 1.2,   "gZ": 0.4
+          },
+          "frequencies": {
+            "aX": 5.27, "aY": null, "aZ": null,
+            "gX": 5.08, "gY": null, "gZ": null
+          }
+        }
+        ```
+      responses:
+        "101":
+          description: WebSocket upgrade successful
+        "401":
+          description: JWT missing or invalid — connection rejected

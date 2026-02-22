@@ -1,0 +1,138 @@
+openapi: "3.0.3"
+info:
+  title: User Registration API — Role Update Contract
+  description: >
+    Updated contract for user registration reflecting the new valid role set
+    (doctor, admin). The 'patient' role is no longer accepted.
+  version: "2.0.0"
+
+paths:
+  /api/auth/register/:
+    post:
+      summary: Register a new user
+      description: >
+        Creates a new platform user. Valid roles are 'doctor' and 'admin' only.
+        If role is omitted, defaults to 'doctor'. Providing 'patient' returns a
+        400 validation error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              doctor_explicit:
+                summary: Register a doctor (explicit role)
+                value:
+                  email: "dr.smith@hospital.com"
+                  first_name: "John"
+                  last_name: "Smith"
+                  role: "doctor"
+                  password: "SecurePass123!"
+                  password_confirm: "SecurePass123!"
+              doctor_default:
+                summary: Register a doctor (role omitted, defaults to doctor)
+                value:
+                  email: "dr.jones@hospital.com"
+                  first_name: "Jane"
+                  last_name: "Jones"
+                  password: "SecurePass123!"
+                  password_confirm: "SecurePass123!"
+              admin:
+                summary: Register an admin
+                value:
+                  email: "admin@tremoblocks.com"
+                  first_name: "Admin"
+                  last_name: "User"
+                  role: "admin"
+                  password: "SecurePass123!"
+                  password_confirm: "SecurePass123!"
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        "400":
+          description: Validation error (including invalid role)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              examples:
+                invalid_role:
+                  summary: Patient role rejected
+                  value:
+                    role:
+                      - "Role must be either 'doctor' or 'admin'."
+                password_mismatch:
+                  summary: Password mismatch
+                  value:
+                    password:
+                      - "Password fields didn't match."
+
+components:
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - first_name
+        - last_name
+        - password
+        - password_confirm
+      properties:
+        email:
+          type: string
+          format: email
+          example: "dr.smith@hospital.com"
+        first_name:
+          type: string
+          example: "John"
+        last_name:
+          type: string
+          example: "Smith"
+        role:
+          type: string
+          enum:
+            - doctor
+            - admin
+          default: doctor
+          description: >
+            User role. Must be 'doctor' or 'admin'. Defaults to 'doctor' if
+            omitted. The value 'patient' is no longer valid.
+        password:
+          type: string
+          format: password
+        password_confirm:
+          type: string
+          format: password
+
+    RegisterResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+        role:
+          type: string
+          enum:
+            - doctor
+            - admin
+        date_joined:
+          type: string
+          format: date-time
+
+    ValidationError:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string

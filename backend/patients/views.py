@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q
 
-from authentication.permissions import IsDoctor
+from authentication.permissions import IsDoctorOrAdmin
 from .models import Patient, DoctorPatientAssignment
 from .serializers import (
     PatientListSerializer,
@@ -34,7 +34,7 @@ class PatientViewSet(viewsets.ModelViewSet):
     - assign_doctor: POST /api/patients/{id}/assign-doctor/
     """
 
-    permission_classes = [IsAuthenticated, IsDoctor]
+    permission_classes = [IsAuthenticated, IsDoctorOrAdmin]
     filter_backends = [DjangoFilterBackend]
     filterset_class = PatientFilter
     pagination_class = PatientPagination
@@ -49,13 +49,20 @@ class PatientViewSet(viewsets.ModelViewSet):
         """
         user = self.request.user
 
+        if user.role == 'admin':
+            return Patient.objects.all().select_related('created_by').prefetch_related(
+                'doctor_assignments__doctor', 'biometric_sessions'
+            )
+
         if user.role != 'doctor':
             return Patient.objects.none()
 
         # Get patients created by this doctor OR assigned to this doctor
         return Patient.objects.filter(
             Q(created_by=user) | Q(doctor_assignments__doctor=user)
-        ).distinct().select_related('created_by').prefetch_related('doctor_assignments__doctor')
+        ).distinct().select_related('created_by').prefetch_related(
+            'doctor_assignments__doctor', 'biometric_sessions'
+        )
 
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""

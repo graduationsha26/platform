@@ -1,0 +1,161 @@
+@import "tailwindcss"; /* MUST be line 1 */
+@config "../tailwind.config.js";
+
+/**
+ * TremoAI Frontend Styles
+ * Medical-grade UI design system for Parkinson's tremor monitoring platform
+ */
+
+/* ========================================
+   DESIGN SYSTEM IMPORTS
+   ======================================== */
+@import './styles/tokens.css';
+@import './styles/animations.css';
+@import './styles/utilities.css';
+
+/* ========================================
+   GLOBAL BASE STYLES
+   ======================================== */
+
+@layer base {
+  /* Body - Medical Professional Typography */
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+    color: var(--color-text-primary);
+    background-color: var(--color-bg-secondary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Typography Hierarchy */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: var(--font-bold);
+    color: var(--color-text-primary);
+    line-height: var(--leading-tight);
+    margin: 0;
+  }
+
+  h1 {
+    font-size: var(--text-4xl);
+  }
+
+  h2 {
+    font-size: var(--text-3xl);
+  }
+
+  h3 {
+    font-size: var(--text-2xl);
+  }
+
+  h4 {
+    font-size: var(--text-xl);
+  }
+
+  p {
+    margin: 0;
+    line-height: var(--leading-normal);
+  }
+
+  /* Code Elements */
+  code, pre {
+    font-family: var(--font-mono);
+  }
+
+  code {
+    background-color: var(--color-neutral-100);
+    color: var(--color-primary-700);
+    padding: var(--spacing-1) var(--spacing-2);
+    border-radius: var(--radius-sm);
+    font-size: 0.875em;
+  }
+
+  pre code {
+    background-color: transparent;
+    padding: 0;
+  }
+
+  /* Links */
+  a {
+    color: var(--color-primary-600);
+    text-decoration: none;
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+
+  a:hover {
+    color: var(--color-primary-700);
+    text-decoration: underline;
+  }
+
+  a:focus {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+    border-radius: var(--radius-sm);
+  }
+
+  /* Focus Styles for Accessibility */
+  *:focus-visible {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+    border-radius: var(--radius-sm);
+  }
+
+  /* Smooth Scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* ========================================
+   ACCESSIBILITY - REDUCED MOTION
+   ======================================== */
+
+/**
+ * Respects user's motion preferences (WCAG 2.1 Level AA)
+ * Disables all animations for users who prefer reduced motion
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* ========================================
+   COMPONENT LAYER (Custom Components)
+   ======================================== */
+
+@layer components {
+  /* Medical Dashboard Card */
+  .dashboard-card {
+    @apply bg-white rounded-lg shadow-md p-6;
+    @apply hover:shadow-lg transition-shadow duration-200;
+    @apply border border-neutral-200;
+  }
+
+  /* Page Container */
+  .page-container {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12;
+  }
+
+  /* Section Spacing */
+  .section {
+    @apply mb-8 lg:mb-12;
+  }
+
+  /* Form Group */
+  .form-group {
+    @apply mb-4 lg:mb-6;
+  }
+}

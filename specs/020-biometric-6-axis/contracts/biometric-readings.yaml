@@ -1,0 +1,199 @@
+openapi: "3.0.3"
+info:
+  title: BiometricReading API
+  version: "1.0"
+  description: >
+    Read-only API for individual timestamped raw sensor readings from the wearable glove device.
+    All responses include exactly 6 sensor axis fields (aX, aY, aZ, gX, gY, gZ).
+    No magnetometer (mX, mY, mZ) or flex fields are ever included.
+
+paths:
+  /api/biometric-readings/:
+    get:
+      summary: List BiometricReading records
+      description: >
+        Returns a paginated list of raw sensor readings for patients accessible to the
+        authenticated user. Doctors see readings for patients they created or are assigned to.
+        Patients see only their own readings.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: patient
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Filter readings by patient ID
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Page number for pagination
+      responses:
+        "200":
+          description: Paginated list of biometric readings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BiometricReadingList"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/biometric-readings/{id}/:
+    get:
+      summary: Retrieve a single BiometricReading
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: BiometricReading record ID
+      responses:
+        "200":
+          description: Single biometric reading
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BiometricReading"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Forbidden (patient does not belong to this doctor)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Reading not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    BiometricReading:
+      type: object
+      description: >
+        A single raw IMU sensor sample from the wearable glove.
+        Contains exactly the 6 active axes from accelerometer and gyroscope.
+        No magnetometer fields (mX, mY, mZ) are included — the hardware magnetometer
+        is disabled and these values were never stored in this model.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          description: Unique record identifier
+        patient_id:
+          type: integer
+          readOnly: true
+          description: ID of the patient this reading belongs to
+        timestamp:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Timestamp of the sensor reading (ISO 8601)
+        aX:
+          type: number
+          format: float
+          readOnly: true
+          description: Accelerometer X-axis reading (m/s²)
+        aY:
+          type: number
+          format: float
+          readOnly: true
+          description: Accelerometer Y-axis reading (m/s²)
+        aZ:
+          type: number
+          format: float
+          readOnly: true
+          description: Accelerometer Z-axis reading (m/s²)
+        gX:
+          type: number
+          format: float
+          readOnly: true
+          description: Gyroscope X-axis reading (°/s)
+        gY:
+          type: number
+          format: float
+          readOnly: true
+          description: Gyroscope Y-axis reading (°/s)
+        gZ:
+          type: number
+          format: float
+          readOnly: true
+          description: Gyroscope Z-axis reading (°/s)
+      required:
+        - id
+        - patient_id
+        - timestamp
+        - aX
+        - aY
+        - aZ
+        - gX
+        - gY
+        - gZ
+      example:
+        id: 42
+        patient_id: 7
+        timestamp: "2026-02-18T10:30:00Z"
+        aX: 0.12
+        aY: -0.05
+        aZ: 9.81
+        gX: 1.23
+        gY: -0.44
+        gZ: 0.09
+
+    BiometricReadingList:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: Total number of readings
+        next:
+          type: string
+          nullable: true
+          description: URL to next page
+        previous:
+          type: string
+          nullable: true
+          description: URL to previous page
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/BiometricReading"
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+      required:
+        - error
+      example:
+        error: "You do not have access to this patient"

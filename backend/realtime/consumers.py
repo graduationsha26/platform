@@ -162,6 +162,143 @@ class TremorDataConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             logger.error(f"Error forwarding tremor data: {e}", exc_info=True)
 
+    async def biometric_reading(self, event):
+        """Handle biometric_reading messages from channel layer (broadcast from MQTT client at ~100 Hz).
+
+        Forwards raw 6-axis IMU readings (aX, aY, aZ, gX, gY, gZ) to the connected
+        WebSocket client for the live tremor monitor amplitude chart and raw values panel.
+
+        Django Channels maps the channel layer message type 'biometric_reading'
+        to this method automatically.
+
+        Args:
+            event: Dict containing 'message' with the raw sensor reading payload.
+        """
+        try:
+            message = event['message']
+            await self.send(text_data=json.dumps(message))
+            logger.debug(
+                "biometric_reading forwarded to user %s",
+                self.user.id if self.user else 'unknown',
+            )
+        except Exception as e:
+            logger.error(f"Error forwarding biometric_reading: {e}", exc_info=True)
+
+    async def tremor_metrics_update(self, event):
+        """Handle tremor_metrics_update messages from channel layer (broadcast from TremorFilterService at ~1 Hz).
+
+        Forwards the FFT analysis result to the connected WebSocket client.
+        Django Channels maps the channel layer message type 'tremor_metrics_update'
+        to this method automatically.
+
+        Args:
+            event: Dict containing 'message' with the FFT analysis result payload.
+        """
+        try:
+            message = event['message']
+            await self.send(text_data=json.dumps(message))
+            logger.debug(
+                "tremor_metrics_update forwarded to user %s",
+                self.user.id if self.user else 'unknown',
+            )
+        except Exception as e:
+            logger.error(f"Error forwarding tremor_metrics_update: {e}", exc_info=True)
+
+    async def cmg_telemetry(self, event):
+        """Handle cmg_telemetry messages from channel layer (broadcast from MQTT pipeline at ~1 Hz).
+
+        Forwards live motor telemetry (RPM, current, status) to the connected WebSocket client.
+        Django Channels maps the channel layer message type 'cmg_telemetry' to this method.
+
+        Args:
+            event: Dict containing 'message' with the motor telemetry payload.
+        """
+        try:
+            message = event['message']
+            await self.send(text_data=json.dumps(message))
+            logger.debug(
+                "cmg_telemetry forwarded to user %s",
+                self.user.id if self.user else 'unknown',
+            )
+        except Exception as e:
+            logger.error(f"Error forwarding cmg_telemetry: {e}", exc_info=True)
+
+    async def cmg_fault(self, event):
+        """Handle cmg_fault messages from channel layer (broadcast from MQTT pipeline on fault detection).
+
+        Forwards motor fault alerts to the connected WebSocket client immediately on occurrence.
+        Django Channels maps the channel layer message type 'cmg_fault' to this method.
+
+        Args:
+            event: Dict containing 'message' with the motor fault payload.
+        """
+        try:
+            message = event['message']
+            await self.send(text_data=json.dumps(message))
+            logger.debug(
+                "cmg_fault forwarded to user %s",
+                self.user.id if self.user else 'unknown',
+            )
+        except Exception as e:
+            logger.error(f"Error forwarding cmg_fault: {e}", exc_info=True)
+
+    async def servo_state(self, event):
+        """Handle servo_state messages from channel layer (broadcast from MQTT pipeline at device rate).
+
+        Forwards live gimbal position and axis status to the connected WebSocket client.
+        Django Channels maps the channel layer message type 'servo_state' to this method.
+
+        Args:
+            event: Dict containing 'message' with the gimbal state payload.
+        """
+        try:
+            message = event['message']
+            await self.send(text_data=json.dumps(message))
+            logger.debug(
+                "servo_state forwarded to user %s",
+                self.user.id if self.user else 'unknown',
+            )
+        except Exception as e:
+            logger.error(f"Error forwarding servo_state: {e}", exc_info=True)
+
+    async def pid_status(self, event):
+        """Handle pid_status messages from channel layer (broadcast from MQTT pipeline).
+
+        Forwards PID suppression mode status to the connected WebSocket client.
+        Django Channels maps the channel layer message type 'pid_status' to this method.
+
+        Args:
+            event: Dict containing 'message' with the PID status payload.
+        """
+        try:
+            message = event['message']
+            await self.send(text_data=json.dumps(message))
+            logger.debug(
+                "pid_status forwarded to user %s",
+                self.user.id if self.user else 'unknown',
+            )
+        except Exception as e:
+            logger.error(f"Error forwarding pid_status: {e}", exc_info=True)
+
+    async def suppression_metric(self, event):
+        """Handle suppression_metric messages from channel layer (broadcast from MQTT pipeline).
+
+        Forwards live suppression effectiveness metrics to the connected WebSocket client.
+        Django Channels maps the channel layer message type 'suppression_metric' to this method.
+
+        Args:
+            event: Dict containing 'message' with the suppression metric payload.
+        """
+        try:
+            message = event['message']
+            await self.send(text_data=json.dumps(message))
+            logger.debug(
+                "suppression_metric forwarded to user %s",
+                self.user.id if self.user else 'unknown',
+            )
+        except Exception as e:
+            logger.error(f"Error forwarding suppression_metric: {e}", exc_info=True)
+
     # Helper methods
 
     @sync_to_async

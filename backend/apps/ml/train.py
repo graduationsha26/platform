@@ -8,8 +8,8 @@ Usage:
     python train.py --dataset Dataset.csv --output ml_models/
 
 Models trained:
-    - Random Forest (random_forest.pkl)
-    - SVM (svm.pkl)
+    - Random Forest (rf_model.pkl) — trained with GridSearchCV
+    - SVM (svm_model.pkl)
 """
 
 import argparse
@@ -20,7 +20,7 @@ import sys
 from datetime import datetime
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.metrics import classification_report, f1_score, accuracy_score
 
 # Import feature utilities
@@ -50,20 +50,40 @@ def train_random_forest(X_train, y_train, X_test, y_test):
     print(f"Test samples: {len(X_test)}")
     print(f"Features: {X_train.shape[1]} ({', '.join(FEATURE_COLUMNS)})")
 
-    # Initialize Random Forest
-    rf = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=20,
+    # Define hyperparameter search space
+    param_grid = {
+        'n_estimators': [100, 200, 300],
+        'max_depth':    [10, 20, None],
+    }
+    total_combinations = len(param_grid['n_estimators']) * len(param_grid['max_depth'])
+    print(f"\nStarting GridSearchCV ({total_combinations} param combinations × 5-fold CV)...")
+
+    # Base estimator with fixed non-searched params
+    base_rf = RandomForestClassifier(
         min_samples_split=10,
         min_samples_leaf=4,
         random_state=42,
-        n_jobs=-1,  # Use all CPUs
-        verbose=1
+        n_jobs=-1,
     )
 
-    # Train
-    print("\nTraining Random Forest...")
-    rf.fit(X_train, y_train)
+    # 5-fold stratified cross-validation
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+    # GridSearchCV over param_grid
+    grid_search = GridSearchCV(
+        estimator=base_rf,
+        param_grid=param_grid,
+        cv=cv,
+        scoring='accuracy',
+        n_jobs=-1,
+        verbose=2,
+    )
+    grid_search.fit(X_train, y_train)
+
+    # Extract best model
+    rf = grid_search.best_estimator_
+    print(f"\nBest parameters: {grid_search.best_params_}")
+    print(f"Best CV accuracy: {grid_search.best_score_:.4f}")
 
     # Evaluate
     y_pred = rf.predict(X_test)
@@ -90,6 +110,8 @@ def train_random_forest(X_train, y_train, X_test, y_test):
         'n_features': int(rf.n_features_in_),
         'feature_names': FEATURE_COLUMNS,
         'feature_importance': dict(zip(FEATURE_COLUMNS, [float(x) for x in importance])),
+        'best_params': grid_search.best_params_,
+        'best_cv_score': float(grid_search.best_score_),
         'trained_date': datetime.utcnow().isoformat() + 'Z'
     }
 
@@ -236,13 +258,13 @@ def main():
         # Train Random Forest
         if train_rf:
             rf_model, rf_metrics = train_random_forest(X_train, y_train, X_test, y_test)
-            save_model(rf_model, 'random_forest.pkl', args.output, rf_metrics)
+            save_model(rf_model, 'rf_model.pkl', args.output, rf_metrics)
             all_metrics.append(rf_metrics)
 
         # Train SVM
         if train_svm_model:
             svm_model, svm_metrics = train_svm(X_train, y_train, X_test, y_test)
-            save_model(svm_model, 'svm.pkl', args.output, svm_metrics)
+            save_model(svm_model, 'svm_model.pkl', args.output, svm_metrics)
             all_metrics.append(svm_metrics)
 
         # Summary

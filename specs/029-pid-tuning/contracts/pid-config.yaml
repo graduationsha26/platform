@@ -1,0 +1,216 @@
+openapi: "3.0.3"
+info:
+  title: CMG PID Config API
+  description: |
+    Feature 029: CMG PID Controller Tuning
+    GET/PUT PID gain configuration for a device.
+  version: "1.0.0"
+
+paths:
+  /api/cmg/pid/config/{device_pk}/:
+    get:
+      summary: Get PID gain configuration for a device
+      description: |
+        Returns the currently active PID gain values for all axes.
+        If no configuration exists yet, returns system default values.
+        Both doctor and patient roles with access to the device may call this.
+      tags: [PID Config]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: device_pk
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Device primary key
+      responses:
+        "200":
+          description: PID configuration (actual or defaults)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PIDConfigResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      summary: Update PID gain configuration for a device
+      description: |
+        Creates or fully replaces the PID configuration for a device.
+        Validates all gains against per-axis safe operating bounds from environment.
+        On success, publishes a retained MQTT pid_config message to the device.
+        Doctor role required.
+      tags: [PID Config]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: device_pk
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PIDConfigInput"
+            example:
+              kp_pitch: 0.08
+              ki_pitch: 0.002
+              kd_pitch: 0.012
+              kp_roll: 0.06
+              ki_roll: 0.001
+              kd_roll: 0.008
+      responses:
+        "200":
+          description: Configuration updated (existing record replaced)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PIDConfigResponse"
+        "201":
+          description: Configuration created (first save for this device)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PIDConfigResponse"
+        "400":
+          description: Validation error (gain out of safe bounds)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldErrors"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    PIDConfigInput:
+      type: object
+      required:
+        - kp_pitch
+        - ki_pitch
+        - kd_pitch
+        - kp_roll
+        - ki_roll
+        - kd_roll
+      properties:
+        kp_pitch:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 0.20
+          description: Proportional gain, pitch axis
+        ki_pitch:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 0.020
+          description: Integral gain, pitch axis
+        kd_pitch:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 0.050
+          description: Derivative gain, pitch axis
+        kp_roll:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 0.15
+          description: Proportional gain, roll axis
+        ki_roll:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 0.015
+          description: Integral gain, roll axis
+        kd_roll:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 0.040
+          description: Derivative gain, roll axis
+
+    PIDConfigResponse:
+      type: object
+      properties:
+        device_id:
+          type: integer
+        kp_pitch:
+          type: number
+          format: float
+        ki_pitch:
+          type: number
+          format: float
+        kd_pitch:
+          type: number
+          format: float
+        kp_roll:
+          type: number
+          format: float
+        ki_roll:
+          type: number
+          format: float
+        kd_roll:
+          type: number
+          format: float
+        config_version:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_by_id:
+          type: integer
+          nullable: true
+
+    FieldErrors:
+      type: object
+      additionalProperties:
+        type: string
+
+  responses:
+    Unauthorized:
+      description: Authentication credentials missing or invalid
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    Forbidden:
+      description: Insufficient permissions (wrong role or no access to device)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    NotFound:
+      description: Device not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string

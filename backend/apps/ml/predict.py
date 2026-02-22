@@ -87,8 +87,8 @@ class MLPredictor:
 
         # Expected models
         model_files = {
-            'rf': 'random_forest.pkl',
-            'svm': 'svm.pkl'
+            'rf': 'rf_model.pkl',
+            'svm': 'svm_model.pkl'
         }
 
         for model_key, filename in model_files.items():

@@ -1,0 +1,28 @@
+{
+  "model_type": "Random Forest",
+  "accuracy": 0.9967851402036078,
+  "f1_score": 0.9967849321916069,
+  "n_features": 6,
+  "feature_names": [
+    "aX",
+    "aY",
+    "aZ",
+    "gX",
+    "gY",
+    "gZ"
+  ],
+  "feature_importance": {
+    "aX": 0.29311547474177235,
+    "aY": 0.2536287265635246,
+    "aZ": 0.14945671585165704,
+    "gX": 0.06947681496086298,
+    "gY": 0.05345616890107303,
+    "gZ": 0.18086609898110986
+  },
+  "best_params": {
+    "max_depth": null,
+    "n_estimators": 300
+  },
+  "best_cv_score": 0.9968297690811088,
+  "trained_date": "2026-02-18T03:36:18.382323Z"
+}

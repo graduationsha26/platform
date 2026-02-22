@@ -1,0 +1,137 @@
+---
+# Training Pipeline Contract: Retrain SVM on 6 Active Sensor Axes (Feature 023)
+# Branch: 023-retrain-svm-6axis | Date: 2026-02-18
+
+## CLI Contract
+
+cli:
+  script: backend/apps/ml/train.py
+  invocation: "python apps/ml/train.py --dataset ../Dataset.csv --output ml_models --models svm"
+  working_directory: backend/
+  arguments:
+    - name: --dataset
+      type: str
+      required: true
+      example: "../Dataset.csv"
+      description: Path to training dataset CSV (relative to working directory)
+    - name: --output
+      type: str
+      default: ml_models
+      description: Output directory for trained model artifacts
+    - name: --models
+      type: list[str]
+      choices: [rf, svm, all]
+      default: [all]
+      description: Which models to train; use 'svm' to train only SVM
+    - name: --test-size
+      type: float
+      default: 0.2
+      description: Fraction of dataset to hold out for testing
+
+## Model Artifact Contract
+
+artifact:
+  filename: svm_model.pkl
+  location: "{output_dir}/svm_model.pkl"
+  format: joblib-serialized scikit-learn SVC
+  constraints:
+    n_features_in_: 6
+    kernel: rbf
+    classes_: [0, 1]
+    predict_input_shape: "(1, 6)  # single sample"
+    predict_output: "int class label (0 or 1)"
+
+## Metrics JSON Contract
+
+metrics_schema:
+  filename: svm_model_metrics.json
+  location: "{output_dir}/svm_model_metrics.json"
+  schema:
+    model_type:
+      type: string
+      value: "SVM"
+    accuracy:
+      type: number
+      minimum: 0.0
+      maximum: 1.0
+    f1_score:
+      type: number
+      minimum: 0.85
+      description: "Acceptance threshold — MUST be >= 0.85"
+    n_features:
+      type: integer
+      value: 6
+    feature_names:
+      type: array
+      items: string
+      value: ["aX", "aY", "aZ", "gX", "gY", "gZ"]
+    kernel:
+      type: string
+      value: "rbf"
+    trained_date:
+      type: string
+      format: ISO 8601 UTC (e.g., "2026-02-18T12:00:00Z")
+  required_fields:
+    - model_type
+    - accuracy
+    - f1_score
+    - n_features
+    - feature_names
+    - kernel
+    - trained_date
+
+## Inference Integration Contract
+
+inference:
+  file: backend/apps/ml/predict.py
+  class: MLPredictor
+  change_required:
+    location: "_load_models() method, model_files dict"
+    before: "'svm': 'svm.pkl'"
+    after:  "'svm': 'svm_model.pkl'"
+  startup_validation:
+    - load svm_model.pkl via validate_sklearn_model()
+    - assert n_features_in_ == 6
+    - log "[OK] SVM: n_features_in_=6"
+  predict_contract:
+    input:
+      type: array
+      shape: "(6,)"
+      elements: [aX, aY, aZ, gX, gY, gZ]
+      dtype: float64
+    output:
+      type: dict
+      fields:
+        prediction: "int (0 or 1)"
+        confidence: "float (1.0 — SVM has no predict_proba by default)"
+        model_type: "str ('SVM')"
+        latency_ms: "float (< 70)"
+
+## Validation Contract
+
+validation:
+  script: backend/apps/ml/validate_models.py
+  invocation: "python apps/ml/validate_models.py ml_models/svm_model.pkl 6"
+  expected_output: "✓ Model validated: n_features_in_ = 6"
+  exit_code: 0
+
+## Backward Compatibility Contract
+
+backward_compatibility:
+  preserved_artifacts:
+    - path: ml_models/svm.pkl
+      status: unchanged (legacy backup, not referenced by active inference)
+    - path: ml_models/rf_model.pkl
+      status: unchanged (Feature 022 artifact, SVM loading logic not touched)
+  changes_isolated_to:
+    - backend/apps/ml/train.py   # 2 lines
+    - backend/apps/ml/predict.py  # 1 line
+  untouched_files:
+    - backend/apps/ml/feature_utils.py
+    - backend/apps/ml/normalize.py
+    - backend/apps/ml/generate_params.py
+    - backend/apps/ml/validate_models.py
+    - backend/realtime/
+    - backend/authentication/
+    - backend/biometrics/
+    - frontend/

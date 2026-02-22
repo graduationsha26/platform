@@ -10,13 +10,6 @@ from django.utils import timezone
 class Patient(models.Model):
     """Patient profile with medical information."""
 
-    user = models.OneToOneField(
-        'authentication.CustomUser',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='patient_profile'
-    )
     full_name = models.CharField(max_length=200)
     date_of_birth = models.DateField()
     contact_phone = models.CharField(

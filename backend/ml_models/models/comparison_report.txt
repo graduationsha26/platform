@@ -1,0 +1,26 @@
+
+======================================================================
+MODEL COMPARISON REPORT
+======================================================================
+Generated: 2026-02-15 21:53:23
+
+Random Forest Classifier:
+  Accuracy:   88.2%
+  Precision:  77.7%
+  Recall:     56.6%
+  F1-Score:   58.6%
+  Training Time: 15.3 seconds
+
+SVM (RBF kernel):
+  Accuracy:   87.3%
+  Precision:  43.6%
+  Recall:     50.0%
+  F1-Score:   46.6%
+  Training Time: 6.1 seconds
+
+Best Model: Random Forest [88.2% accuracy]
+
+Recommendation:
+  Random Forest achieves higher accuracy. Recommended for deployment.
+  Note: Consider Random Forest if model interpretability (feature importance) is needed.
+======================================================================

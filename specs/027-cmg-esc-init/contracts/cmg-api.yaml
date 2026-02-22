@@ -1,0 +1,492 @@
+openapi: 3.0.3
+info:
+  title: CMG Motor API
+  description: |
+    REST API for CMG (Control Moment Gyroscope) motor telemetry, fault management,
+    and motor command dispatch. Feature 027 — TremoAI Platform.
+  version: 1.0.0
+
+servers:
+  - url: /api/cmg
+
+paths:
+
+  /telemetry/:
+    get:
+      summary: List motor telemetry records
+      description: |
+        Returns historical MotorTelemetry records for a device or patient.
+        Records are ordered by timestamp descending (most recent first).
+        Requires doctor role.
+      tags: [Telemetry]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: device_id
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Filter by device ID
+        - name: patient_id
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Filter by patient ID (at least one of device_id or patient_id required)
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 60
+            maximum: 300
+          description: Maximum records to return (default 60 = last 60 seconds at 1 Hz)
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Return records newer than this ISO timestamp
+      responses:
+        '200':
+          description: List of telemetry records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MotorTelemetry'
+              example:
+                count: 3
+                results:
+                  - id: 103
+                    device_id: 1
+                    patient_id: 5
+                    timestamp: "2026-02-18T12:00:02.000Z"
+                    rpm: 15000
+                    current_a: 2.5
+                    status: "running"
+                    fault_type: null
+                  - id: 102
+                    device_id: 1
+                    patient_id: 5
+                    timestamp: "2026-02-18T12:00:01.000Z"
+                    rpm: 15000
+                    current_a: 2.4
+                    status: "running"
+                    fault_type: null
+                  - id: 101
+                    device_id: 1
+                    patient_id: 5
+                    timestamp: "2026-02-18T12:00:00.000Z"
+                    rpm: 14800
+                    current_a: 2.3
+                    status: "starting"
+                    fault_type: null
+        '400':
+          description: Missing required filter parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "At least one of device_id or patient_id is required"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /telemetry/latest/:
+    get:
+      summary: Get most recent motor telemetry for a device
+      description: |
+        Returns the single most recent MotorTelemetry record for a device.
+        Used by the frontend to initialize the CMGStatusPanel on page load.
+      tags: [Telemetry]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: device_id
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Most recent telemetry record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotorTelemetry'
+              example:
+                id: 103
+                device_id: 1
+                patient_id: 5
+                timestamp: "2026-02-18T12:00:02.000Z"
+                rpm: 15000
+                current_a: 2.5
+                status: "running"
+                fault_type: null
+        '400':
+          description: device_id is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No telemetry found for device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "No telemetry found for device 1"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /faults/:
+    get:
+      summary: List motor fault events
+      description: |
+        Returns MotorFaultEvent records for a device or patient.
+        Ordered by occurred_at descending. Can filter by acknowledged status.
+      tags: [Faults]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: device_id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: patient_id
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: At least one of device_id or patient_id required
+        - name: acknowledged
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Filter by acknowledgment status (true/false). Omit for all.
+      responses:
+        '200':
+          description: List of fault events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MotorFaultEvent'
+              example:
+                count: 1
+                results:
+                  - id: 7
+                    device_id: 1
+                    patient_id: 5
+                    occurred_at: "2026-02-18T12:01:00.000Z"
+                    fault_type: "overcurrent"
+                    rpm_at_fault: 14800
+                    current_at_fault: 8.2
+                    acknowledged: false
+                    acknowledged_at: null
+                    acknowledged_by: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /faults/{id}/:
+    get:
+      summary: Retrieve a single fault event
+      tags: [Faults]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Fault event detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotorFaultEvent'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /faults/{id}/acknowledge/:
+    post:
+      summary: Acknowledge a motor fault event
+      description: |
+        Marks a MotorFaultEvent as acknowledged. Idempotent: acknowledging
+        an already-acknowledged fault returns 200 with the current state.
+        Only doctors can acknowledge faults.
+      tags: [Faults]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Fault acknowledged (or already was acknowledged)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotorFaultEvent'
+              example:
+                id: 7
+                device_id: 1
+                patient_id: 5
+                occurred_at: "2026-02-18T12:01:00.000Z"
+                fault_type: "overcurrent"
+                rpm_at_fault: 14800
+                current_at_fault: 8.2
+                acknowledged: true
+                acknowledged_at: "2026-02-18T12:02:30.000Z"
+                acknowledged_by: 3
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /commands/:
+    post:
+      summary: Send a motor control command to the glove
+      description: |
+        Publishes a motor command to the glove via MQTT (QoS 1).
+        The command is forwarded to the device's MQTT topic; the response
+        confirms publication, not execution on the glove.
+        Returns 503 if the MQTT broker is not connected.
+        Only doctors with access to the device's patient can send commands.
+      tags: [Commands]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MotorCommandRequest'
+            examples:
+              start:
+                summary: Start motor (soft-start ramp)
+                value:
+                  device_id: 1
+                  command: "start"
+              stop:
+                summary: Controlled stop (graceful deceleration)
+                value:
+                  device_id: 1
+                  command: "stop"
+              emergency_stop:
+                summary: Emergency stop (immediate output disable)
+                value:
+                  device_id: 1
+                  command: "emergency_stop"
+      responses:
+        '200':
+          description: Command published to MQTT broker
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotorCommandResponse'
+              example:
+                status: "published"
+                command: "start"
+                device_serial: "GLOVE00001"
+                published_at: "2026-02-18T12:00:00.000Z"
+        '400':
+          description: Invalid command or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Invalid command. Must be one of: start, stop, emergency_stop"
+        '404':
+          description: Device not found or not accessible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: MQTT broker not connected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "MQTT broker not connected. Command not sent."
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    MotorTelemetry:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        device_id:
+          type: integer
+        patient_id:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+        rpm:
+          type: integer
+          minimum: 0
+          description: Rotor speed in RPM
+        current_a:
+          type: number
+          format: float
+          minimum: 0.0
+          description: Motor current draw in amperes
+        status:
+          type: string
+          enum: [idle, starting, running, fault]
+        fault_type:
+          type: string
+          enum: [overcurrent, stall]
+          nullable: true
+          description: Present only when status=fault; null otherwise
+      required: [id, device_id, patient_id, timestamp, rpm, current_a, status]
+
+    MotorFaultEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        device_id:
+          type: integer
+        patient_id:
+          type: integer
+        occurred_at:
+          type: string
+          format: date-time
+        fault_type:
+          type: string
+          enum: [overcurrent, stall]
+        rpm_at_fault:
+          type: integer
+          nullable: true
+        current_at_fault:
+          type: number
+          format: float
+          nullable: true
+        acknowledged:
+          type: boolean
+        acknowledged_at:
+          type: string
+          format: date-time
+          nullable: true
+        acknowledged_by:
+          type: integer
+          nullable: true
+          description: User ID of acknowledging doctor
+      required: [id, device_id, patient_id, occurred_at, fault_type, acknowledged]
+
+    MotorCommandRequest:
+      type: object
+      properties:
+        device_id:
+          type: integer
+          description: ID of the target device
+        command:
+          type: string
+          enum: [start, stop, emergency_stop]
+      required: [device_id, command]
+
+    MotorCommandResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [published]
+        command:
+          type: string
+        device_serial:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+  responses:
+    Unauthorized:
+      description: JWT token missing or invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Authentication credentials were not provided."
+    Forbidden:
+      description: User does not have access to this resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "You do not have access to this patient."
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

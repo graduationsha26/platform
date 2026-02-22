@@ -4,7 +4,7 @@ Serializers for BiometricSession models.
 from rest_framework import serializers
 from django.utils import timezone
 from datetime import timedelta
-from .models import BiometricSession
+from .models import BiometricSession, BiometricReading, TremorMetrics
 
 
 class BiometricSessionListSerializer(serializers.ModelSerializer):
@@ -12,12 +12,13 @@ class BiometricSessionListSerializer(serializers.ModelSerializer):
 
     patient = serializers.SerializerMethodField()
     device = serializers.SerializerMethodField()
+    ml_prediction_severity = serializers.SerializerMethodField()
 
     class Meta:
         model = BiometricSession
         fields = [
             'id', 'patient', 'device', 'session_start',
-            'session_duration', 'created_at'
+            'session_duration', 'created_at', 'ml_prediction_severity'
         ]
         read_only_fields = fields
 
@@ -35,6 +36,12 @@ class BiometricSessionListSerializer(serializers.ModelSerializer):
             'serial_number': obj.device.serial_number,
             'status': obj.device.status
         }
+
+    def get_ml_prediction_severity(self, obj):
+        """Extract severity from ml_prediction JSON field."""
+        if obj.ml_prediction:
+            return obj.ml_prediction.get('severity')
+        return None
 
 
 class BiometricSessionDetailSerializer(serializers.ModelSerializer):
@@ -191,3 +198,36 @@ class BiometricAggregationSerializer(serializers.Serializer):
                 'max_tremor_intensity': instance.get('max_tremor', 0.0)
             }
         }
+
+
+class BiometricReadingSerializer(serializers.ModelSerializer):
+    """Read-only serializer for individual BiometricReading records.
+
+    Exposes exactly the six raw IMU sensor fields (accelerometer + gyroscope) plus metadata.
+    The BiometricReading model was designed with only these 6 axes from inception.
+    No magnetometer fields (mX, mY, mZ) or flex fields are part of this model.
+    """
+
+    class Meta:
+        model = BiometricReading
+        fields = ['id', 'patient_id', 'timestamp', 'aX', 'aY', 'aZ', 'gX', 'gY', 'gZ']
+        read_only_fields = ['id', 'patient_id', 'timestamp', 'aX', 'aY', 'aZ', 'gX', 'gY', 'gZ']
+
+
+class TremorMetricsSerializer(serializers.ModelSerializer):
+    """Read-only serializer for TremorMetrics records.
+
+    Returns all per-axis amplitude and frequency fields plus summary fields.
+    Records are created exclusively by TremorFilterService — no API creation.
+    """
+
+    class Meta:
+        model = TremorMetrics
+        fields = [
+            'id', 'patient', 'window_start', 'window_end',
+            'tremor_detected', 'dominant_axis', 'dominant_freq_hz', 'dominant_amplitude',
+            'amp_aX', 'amp_aY', 'amp_aZ', 'amp_gX', 'amp_gY', 'amp_gZ',
+            'freq_aX', 'freq_aY', 'freq_aZ', 'freq_gX', 'freq_gY', 'freq_gZ',
+            'created_at',
+        ]
+        read_only_fields = fields

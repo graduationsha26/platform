@@ -1,0 +1,239 @@
+openapi: 3.0.3
+info:
+  title: TremoAI User Profile API
+  description: User profile endpoints for authenticated users (future feature reference)
+  version: 1.0.0
+  contact:
+    name: TremoAI Platform
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+
+paths:
+  /users/me/:
+    get:
+      summary: Get Current User Profile
+      description: Retrieve the authenticated user's profile information
+      operationId: getCurrentUser
+      tags:
+        - User Profile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          description: Unauthorized - invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Authentication credentials were not provided"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    patch:
+      summary: Update Current User Profile
+      description: Update the authenticated user's profile information (FUTURE FEATURE - not implemented in P1-P4)
+      operationId: updateCurrentUser
+      tags:
+        - User Profile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 100
+                  description: Updated user name
+                  example: "Dr. Jane Smith"
+                avatar:
+                  type: string
+                  format: uri
+                  nullable: true
+                  description: Profile picture URL
+                  example: "https://example.com/avatars/user42.jpg"
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          description: Invalid request or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /users/change-password/:
+    post:
+      summary: Change Password
+      description: Change the authenticated user's password (FUTURE FEATURE - not implemented in P1-P4)
+      operationId: changePassword
+      tags:
+        - User Profile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - current_password
+                - new_password
+              properties:
+                current_password:
+                  type: string
+                  format: password
+                  description: Current password for verification
+                  example: "OldPassword123"
+                new_password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  description: New password (min 8 chars, letter + number)
+                  example: "NewSecurePass456"
+      responses:
+        '200':
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Password changed successfully"
+        '400':
+          description: Invalid request (e.g., weak password, incorrect current password)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                incorrectPassword:
+                  summary: Incorrect current password
+                  value:
+                    error: "Current password is incorrect"
+                weakPassword:
+                  summary: New password too weak
+                  value:
+                    error: "Password must contain at least one letter and one number"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    UserProfile:
+      type: object
+      description: User profile information
+      required:
+        - id
+        - email
+        - name
+        - role
+        - created_at
+      properties:
+        id:
+          type: integer
+          description: User ID (primary key)
+          example: 42
+        email:
+          type: string
+          format: email
+          description: User email address (immutable)
+          example: "doctor@example.com"
+        name:
+          type: string
+          description: User full name
+          example: "Dr. John Doe"
+        role:
+          type: string
+          enum:
+            - doctor
+            - patient
+          description: User role (immutable)
+          example: "doctor"
+        avatar:
+          type: string
+          format: uri
+          nullable: true
+          description: Profile picture URL
+          example: "https://example.com/avatars/user42.jpg"
+        created_at:
+          type: string
+          format: date-time
+          description: Account creation timestamp (ISO 8601)
+          example: "2026-02-16T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last profile update timestamp (ISO 8601)
+          example: "2026-02-16T14:45:00Z"
+
+    Error:
+      type: object
+      description: Generic error response
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "An error occurred"
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from /auth/login/
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: User Profile
+    description: User profile management endpoints (future features)

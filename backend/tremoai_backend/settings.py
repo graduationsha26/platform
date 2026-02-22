@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'realtime',  # Real-Time Pipeline (Feature 002)
     'analytics',  # Analytics and Reporting (Feature 003)
     'inference',  # ML/DL Inference API (Feature 008)
+    'cmg',        # CMG Motor (Feature 027)
 ]
 
 MIDDLEWARE = [

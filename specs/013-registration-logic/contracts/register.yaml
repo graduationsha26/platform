@@ -1,0 +1,150 @@
+openapi: "3.0.3"
+info:
+  title: User Registration — E-1.2 Verified Contract
+  description: >
+    Registration endpoint contract reflecting the finalised role restriction.
+    Valid roles: 'doctor' and 'admin'. Default role: 'doctor' (when omitted).
+    The 'patient' role is rejected at the validation layer.
+  version: "1.1.0"
+
+paths:
+  /api/auth/register/:
+    post:
+      summary: Register a new user account
+      description: >
+        Creates a new platform user. Role must be 'doctor' or 'admin'.
+        Omitting role creates a doctor account by default.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              doctor_no_role:
+                summary: Register doctor (role omitted — defaults to doctor)
+                value:
+                  email: "dr.smith@hospital.com"
+                  first_name: "John"
+                  last_name: "Smith"
+                  password: "SecurePass123!"
+                  password_confirm: "SecurePass123!"
+              doctor_explicit:
+                summary: Register doctor (role explicit)
+                value:
+                  email: "dr.jones@hospital.com"
+                  first_name: "Jane"
+                  last_name: "Jones"
+                  role: "doctor"
+                  password: "SecurePass123!"
+                  password_confirm: "SecurePass123!"
+              admin:
+                summary: Register admin
+                value:
+                  email: "admin@tremoai.com"
+                  first_name: "Platform"
+                  last_name: "Admin"
+                  role: "admin"
+                  password: "SecurePass123!"
+                  password_confirm: "SecurePass123!"
+      responses:
+        "201":
+          description: Account created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              examples:
+                patient_role_rejected:
+                  summary: Patient role rejected
+                  value:
+                    role:
+                      - "Role must be either 'doctor' or 'admin'."
+                empty_role:
+                  summary: Empty string role rejected
+                  value:
+                    role:
+                      - '"" is not a valid choice.'
+                wrong_case:
+                  summary: Wrong case role rejected
+                  value:
+                    role:
+                      - '"Doctor" is not a valid choice.'
+                password_mismatch:
+                  summary: Password confirmation mismatch
+                  value:
+                    password:
+                      - "Password fields didn't match."
+                duplicate_email:
+                  summary: Email already registered
+                  value:
+                    email:
+                      - "User with this email already exists."
+
+components:
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - first_name
+        - last_name
+        - password
+        - password_confirm
+      properties:
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+        role:
+          type: string
+          enum:
+            - doctor
+            - admin
+          default: doctor
+          description: >
+            User role. Must be 'doctor' or 'admin' (case-sensitive).
+            Defaults to 'doctor' if omitted.
+        password:
+          type: string
+          format: password
+        password_confirm:
+          type: string
+          format: password
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+        role:
+          type: string
+          enum:
+            - doctor
+            - admin
+        date_joined:
+          type: string
+          format: date-time
+
+    ValidationError:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string

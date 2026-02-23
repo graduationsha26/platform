@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ipconfig:*)",
+      "Bash(cd \"/c/Data from HDD/Graduation Project/Platform/firmware\" && pio run -e esp32dev-debug --target upload 2>&1)",
+      "Bash(python -m platformio --version)",
+      "Bash(python3 -m platformio --version)",
+      "Bash(cd \"/c/Data from HDD/Graduation Project/Platform/firmware\" && python -m platformio run -e esp32dev-debug --target upload 2>&1)",
+      "Bash(powershell:*)",
+      "Bash(tail:*)",
+      "Bash(cd \"/c/Data from HDD/Graduation Project/Platform/firmware\" && python -m platformio device monitor --port COM4 --baud 115200 --filter esp32_exception_decoder --filter time 2>&1)"
+    ]
+  }
+}

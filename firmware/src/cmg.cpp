@@ -22,28 +22,31 @@
 #include <Arduino.h>
 
 void cmg_init() {
-    // ESP32 Arduino 3.x pin-based LEDC API:
-    //   ledcAttach(pin, freq, resolution) — replaces ledcSetup + ledcAttachPin
-    //   ledcWrite(pin, duty)              — replaces ledcWrite(channel, duty)
+    // ESP32 Arduino 2.x channel-based LEDC API:
+    //   ledcSetup(channel, freq, resolution)
+    //   ledcAttachPin(pin, channel)
+    //   ledcWrite(channel, duty)
 
-    // --- Gimbal servo (GPIO CMG_GIMBAL_PIN) ---
-    ledcAttach(CMG_GIMBAL_PIN, CMG_PWM_FREQ_HZ, CMG_PWM_RESOLUTION);
+    // --- Gimbal servo (GPIO CMG_GIMBAL_PIN, channel CMG_GIMBAL_CHANNEL) ---
+    ledcSetup(CMG_GIMBAL_CHANNEL, CMG_PWM_FREQ_HZ, CMG_PWM_RESOLUTION);
+    ledcAttachPin(CMG_GIMBAL_PIN, CMG_GIMBAL_CHANNEL);
     // Center gimbal at 1500µs: duty = (1500 × 65536) / 20000 = 4915
-    ledcWrite(CMG_GIMBAL_PIN, (1500UL * 65536UL) / 20000UL);
+    ledcWrite(CMG_GIMBAL_CHANNEL, (1500UL * 65536UL) / 20000UL);
 
-    // --- Flywheel ESC (GPIO CMG_FLYWHEEL_PIN) ---
-    ledcAttach(CMG_FLYWHEEL_PIN, CMG_PWM_FREQ_HZ, CMG_PWM_RESOLUTION);
+    // --- Flywheel ESC (GPIO CMG_FLYWHEEL_PIN, channel CMG_FLYWHEEL_CHANNEL) ---
+    ledcSetup(CMG_FLYWHEEL_CHANNEL, CMG_PWM_FREQ_HZ, CMG_PWM_RESOLUTION);
+    ledcAttachPin(CMG_FLYWHEEL_PIN, CMG_FLYWHEEL_CHANNEL);
 
     // Arm ESC: hold minimum throttle (1000µs) for 2 seconds — required by ESC firmware
     // duty = (1000 × 65536) / 20000 = 3277
-    ledcWrite(CMG_FLYWHEEL_PIN, (1000UL * 65536UL) / 20000UL);
+    ledcWrite(CMG_FLYWHEEL_CHANNEL, (1000UL * 65536UL) / 20000UL);
     delay(2000);  // ESC arming sequence — normal behavior; do not remove
 
     // Ramp to constant operating throttle
-    ledcWrite(CMG_FLYWHEEL_PIN, CMG_FLYWHEEL_DUTY);
+    ledcWrite(CMG_FLYWHEEL_CHANNEL, CMG_FLYWHEEL_DUTY);
 
-    Serial.printf("[CMG] Initialized. Gimbal GPIO%d, Flywheel GPIO%d, 50Hz 16-bit.\n",
-                  CMG_GIMBAL_PIN, CMG_FLYWHEEL_PIN);
+    Serial.printf("[CMG] Initialized. Gimbal GPIO%d (ch%d), Flywheel GPIO%d (ch%d), 50Hz 16-bit.\n",
+                  CMG_GIMBAL_PIN, CMG_GIMBAL_CHANNEL, CMG_FLYWHEEL_PIN, CMG_FLYWHEEL_CHANNEL);
 }
 
 void cmg_set_gimbal(float output_normalized) {
@@ -64,5 +67,5 @@ void cmg_set_gimbal(float output_normalized) {
 
     // Compute 16-bit LEDC duty and apply (pin-based API)
     uint32_t duty = (pulse_us * 65536UL) / 20000UL;
-    ledcWrite(CMG_GIMBAL_PIN, duty);
+    ledcWrite(CMG_GIMBAL_CHANNEL, duty);
 }

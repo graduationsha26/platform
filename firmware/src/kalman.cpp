@@ -64,7 +64,7 @@ void kalman_init(KalmanFilter* kf, float initial_bias) {
     if (!kf) return;
 
     kf->angle     = 0.0f;
-    kf->bias      = initial_bias;   // Pre-seeded from startup calibration
+    kf->bias      = 0.0f;           // Zero: gyro input is already bias-corrected by apply_calibration()
     kf->P[0][0]   = 0.0f;
     kf->P[0][1]   = 0.0f;
     kf->P[1][0]   = 0.0f;

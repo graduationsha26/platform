@@ -147,7 +147,8 @@ Source code organization depends on project type (detected from plan.md):
 
 - **Single project** (default): `src/`, `tests/` at repository root
 - **Web application**: `backend/src/`, `frontend/src/`, separate test directories
-- **Mobile + API**: `api/src/`, `ios/` or `android/` with platform-specific structure
+- **Firmware/Hardware**: `firmware/src/`, `firmware/include/`
+
 
 ## Working with Speckit
 
@@ -203,7 +204,7 @@ This Speckit instance is configured for the **TremoAI Web Platform** - a graduat
 
 ### Constitutional Tech Stack (Non-Negotiable)
 
-**Architecture**: Monorepo with `backend/` (Django) and `frontend/` (React)
+**Architecture**: Monorepo with `backend/` (Django), `frontend/` (React) and `firmware/` (PlatformIO/C++)
 
 **Backend**:
 - Django 5.x + Django REST Framework + Django Channels
@@ -211,7 +212,9 @@ This Speckit instance is configured for the **TremoAI Web Platform** - a graduat
 - Django Channels WebSocket for real-time data streaming
   - channels-redis (Redis channel layer backend)
   - Redis server (localhost:6379) for inter-process communication
-- MQTT client for glove sensor data ingestion
+- Bidirectional MQTT Integration
+  - Subscribes to incoming glove sensor telemetry (IMU/Gyroscope)
+  - Publishes outgoing control commands (CMG counter-torque/servo parameters)
   - paho-mqtt library for MQTT protocol
   - MQTT broker (Mosquitto or equivalent)
 - AI/ML models: scikit-learn (.pkl) and TensorFlow/Keras (.h5)
@@ -222,11 +225,16 @@ This Speckit instance is configured for the **TremoAI Web Platform** - a graduat
 - Recharts for data visualization
 - Jest/Vitest for testing
 
+**Firmware**:
+- ESP32 C++ (PlatformIO)
+- Main logic in `firmware/src/`
+- Hardware control libraries in `firmware/lib/` and `firmware/include/`
+
 **Database**: Supabase PostgreSQL (remote only, no local SQLite)
 
 **Authentication**: JWT tokens via Django SimpleJWT with two roles:
-- `patient` - Patient users
 - `doctor` - Medical professional users
+- `admin` - Institutional managers (e.g., receptionists) overseeing patient/device distribution
 
 **API Standards**:
 - RESTful endpoints (e.g., `/api/patients/`, `/api/tremor-data/`)
@@ -249,9 +257,9 @@ Always validate against `.specify/memory/constitution.md`:
 - Features must fit within the monorepo structure
 - No new frameworks outside the constitutional stack
 - Must use Supabase PostgreSQL (no other databases)
-- Authentication via JWT with patient/doctor roles
+- Authentication via JWT with doctor/admin roles
 - Real-time features use Django Channels WebSocket
-- Sensor data integration uses MQTT
+- Hardware integration utilizes Bidirectional MQTT
 - All secrets in `.env` files
 
 See the constitution file for complete principles and rationale.

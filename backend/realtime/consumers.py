@@ -358,7 +358,7 @@ class TremorDataConsumer(AsyncWebsocketConsumer):
             })
             serializer.is_valid(raise_exception=True)
 
-            await self.send(text_data=json.dumps(serializer.validated_data))
+            await self.send(text_data=json.dumps(serializer.data))
         except Exception as e:
             logger.error(f"Error sending status message: {e}", exc_info=True)
 
@@ -379,7 +379,7 @@ class TremorDataConsumer(AsyncWebsocketConsumer):
             })
             serializer.is_valid(raise_exception=True)
 
-            await self.send(text_data=json.dumps(serializer.validated_data))
+            await self.send(text_data=json.dumps(serializer.data))
         except Exception as e:
             logger.error(f"Error sending error message: {e}", exc_info=True)
 
@@ -392,6 +392,6 @@ class TremorDataConsumer(AsyncWebsocketConsumer):
             })
             serializer.is_valid(raise_exception=True)
 
-            await self.send(text_data=json.dumps(serializer.validated_data))
+            await self.send(text_data=json.dumps(serializer.data))
         except Exception as e:
             logger.error(f"Error sending pong message: {e}", exc_info=True)

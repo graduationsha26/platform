@@ -22,13 +22,14 @@ This constitution defines the non-negotiable architectural and technical princip
 
 ### I. Monorepo Architecture
 
-**Rule**: The platform MUST maintain a monorepo structure with `backend/` (Django) and `frontend/` (React) directories at the repository root.
+**Rule**: The platform MUST maintain a monorepo structure with `backend/` (Django), `frontend/` (React), and `firmware/` (PlatformIO/C++) directories at the repository root.
 
-**Rationale**: Single repository ensures synchronized versioning, simplified dependency management between frontend and backend, and atomic commits for features spanning both layers.
+**Rationale**: Single repository ensures synchronized versioning, simplified dependency management between frontend, backend, and hardware layers, and atomic commits for features spanning the entire stack.
 
 **Non-negotiable constraints**:
 - All backend code resides in `backend/` directory
 - All frontend code resides in `frontend/` directory
+- All ESP32 hardware and C++ code resides in the `firmware/` directory
 - Shared types/contracts may exist in a `shared/` or `contracts/` directory
 - No splitting into separate repositories
 
@@ -67,12 +68,12 @@ This constitution defines the non-negotiable architectural and technical princip
 
 **Non-negotiable constraints**:
 - JWT tokens for authentication (no session-based auth)
-- Two roles: `doctor` and `admin`
+- Two roles only: `doctor` and `admin` (Patients do not have system access)
 - Role-based access control enforced at API endpoint level
 - Tokens must include user role in payload
 - Frontend must store tokens securely and include in API requests
 
-**Rationale**: JWT provides stateless authentication suitable for real-time applications, role-based access ensures proper access control for doctors and platform administrators.
+**Rationale**: JWT provides stateless authentication suitable for real-time applications. The platform is strictly for medical staff. Admins act as institutional managers (e.g., receptionists) overseeing patient/device distribution across multiple doctors.
 
 ### V. Security-First Configuration
 
@@ -102,24 +103,28 @@ This constitution defines the non-negotiable architectural and technical princip
 
 ### MQTT Integration
 
-**Rule**: The backend MUST subscribe to an MQTT broker to receive incoming sensor data from the glove hardware.
+**Rule**: The backend MUST maintain bidirectional communication with an MQTT broker to receive incoming sensor data AND publish control commands to the glove hardware.
 
 **Requirements**:
-- Django application subscribes to MQTT topics for glove sensor data
-- MQTT broker connection details in `.env` files
-- Sensor data processed and stored in PostgreSQL
-- Real-time data forwarded to connected WebSocket clients
+- Django application subscribes to MQTT topics for incoming glove sensor data (IMU/Gyroscope).
+- Django application publishes control commands (e.g., CMG counter-torque, servo PID tuning) to the glove.
+- MQTT broker connection details in `.env` files.
+- Sensor data processed and stored in PostgreSQL.
+- Real-time data forwarded to connected WebSocket clients.
 
 ### AI Model Serving
 
-**Rule**: AI/ML models MUST be served via Django backend. Supported formats:
+**Rule**: AI/ML models MUST be served via the Django backend utilizing a segmented ML architecture. Supported formats:
 - scikit-learn models (`.pkl` files)
 - TensorFlow/Keras models (`.h5` files)
 
 **Requirements**:
-- Models stored in `backend/models/` directory (excluded from git via `.gitignore`)
-- Model inference performed server-side, never in browser
-- Predictions returned via REST API endpoints
+- Classical ML models are stored in `backend/ml_models/models/`
+- Deep Learning models are stored in `backend/dl_models/models/`
+- All model inference APIs must be routed exclusively through the `backend/inference/` application.
+- Models are excluded from git via `.gitignore`.
+- Model inference performed server-side, never in browser.
+- Predictions returned via REST API endpoints.
 
 ## API Standards
 
@@ -165,4 +170,4 @@ This constitution defines the non-negotiable architectural and technical princip
 - Feature plans must document any principle conflicts
 - Unjustified violations block feature implementation
 
-**Version**: 1.0.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-02-15
+**Version**: 1.1.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-04-09

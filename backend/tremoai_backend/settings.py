@@ -98,7 +98,7 @@ CHANNEL_LAYERS = {
 DATABASES = {
     'default': dj_database_url.config(
         default=config('DATABASE_URL', default='sqlite:///db.sqlite3'),
-        conn_max_age=600,
+        conn_max_age=0,
         conn_health_checks=True,
     )
 }
@@ -214,6 +214,11 @@ SPECTACULAR_SETTINGS = {
     'COMPONENT_SPLIT_REQUEST': True,
 }
 
+# MQTT Broker Configuration (Bidirectional — Feature 039)
+MQTT_BROKER_URL = config('MQTT_BROKER_URL', default='mqtt://localhost:1883')
+MQTT_USERNAME   = config('MQTT_USERNAME', default='')
+MQTT_PASSWORD   = config('MQTT_PASSWORD', default='')
+
 # Logging Configuration
 LOGGING = {
     'version': 1,
@@ -263,6 +268,21 @@ LOGGING = {
         'biometrics': {
             'handlers': ['console', 'file'],
             'level': 'INFO',
+            'propagate': False,
+        },
+        'inference': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'cmg': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'realtime': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
             'propagate': False,
         },
     },

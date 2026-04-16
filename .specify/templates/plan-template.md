@@ -18,24 +18,25 @@
   - Backend: Django 5.x + Django REST Framework + Django Channels
   - Frontend: React 18+ + Vite + Tailwind CSS + Recharts
   - Database: Supabase PostgreSQL (remote only)
-  - Authentication: JWT via Django SimpleJWT
-  - Real-time: Django Channels WebSocket
+  - Authentication: JWT via Django SimpleJWT (roles: doctor/admin)
+  - Real-time & Hardware: Django Channels WebSocket & Bidirectional MQTT
+  - AI/ML Serving: Models routed exclusively through Django 'inference' app
   - Testing: pytest (backend), Jest/Vitest (frontend)
-  - Project Type: web (monorepo with backend/ and frontend/)
+  - Project Type: monorepo (backend/, frontend/, firmware/)
 -->
 
 **Backend Stack**: Django 5.x + Django REST Framework + Django Channels
 **Frontend Stack**: React 18+ + Vite + Tailwind CSS + Recharts
 **Database**: Supabase PostgreSQL (remote)
-**Authentication**: JWT (SimpleJWT) with roles (patient/doctor)
+**Authentication**: JWT (SimpleJWT) with roles (doctor/admin)
 **Testing**: pytest (backend), Jest/Vitest (frontend)
-**Project Type**: web (monorepo: backend/ and frontend/)
+**Project Type**: monorepo (backend/, frontend/, firmware/)
 **Real-time**: Django Channels WebSocket for live tremor data
-**Integration**: MQTT subscription for glove sensor data
-**AI/ML**: scikit-learn (.pkl) and TensorFlow/Keras (.h5) served via Django
+**Integration**: Bidirectional MQTT (ESP32 sensor data in, actuator commands out)
+**AI/ML**: scikit-learn (.pkl) and TensorFlow/Keras (.h5) served via Django `inference` app
 **Performance Goals**: [domain-specific, e.g., WebSocket latency <100ms, API response <200ms]
-**Constraints**: [domain-specific, e.g., local development only, no Docker/CI/CD]
-**Scale/Scope**: [domain-specific, e.g., 10 concurrent doctors, 100 patients]
+**Constraints**: [domain-specific, e.g., local development only, requires ESP32 hardware connection]
+**Scale/Scope**: [domain-specific, e.g., 10 concurrent doctors, high-frequency IMU telemetry]
 
 ## Constitution Check
 
@@ -43,14 +44,14 @@
 
 Validate this feature against `.specify/memory/constitution.md` principles:
 
-- [ ] **Monorepo Architecture**: Feature fits in `backend/` or `frontend/` structure
+- [ ] **Monorepo Architecture**: Feature fits in `backend/`, `frontend/`, or `firmware/` structure
 - [ ] **Tech Stack Immutability**: No new frameworks/libraries outside constitutional stack
 - [ ] **Database Strategy**: Uses Supabase PostgreSQL only (no local DB, no other systems)
-- [ ] **Authentication**: Uses JWT via SimpleJWT with patient/doctor roles
+- [ ] **Authentication**: Uses JWT via SimpleJWT with doctor/admin roles
 - [ ] **Security-First**: All secrets in `.env` files, no hardcoded credentials
 - [ ] **Real-time Requirements**: Uses Django Channels WebSocket if real-time needed
-- [ ] **MQTT Integration**: Uses MQTT subscription if glove data involved
-- [ ] **AI Model Serving**: Models served via Django backend (`.pkl` or `.h5`)
+- [ ] **MQTT Integration**: Uses bidirectional MQTT if ESP32 glove data/control is involved
+- [ ] **AI Model Serving**: Models served via Django `inference` backend (`.pkl` or `.h5`)
 - [ ] **API Standards**: REST + JSON, standard HTTP codes, snake_case naming
 - [ ] **Development Scope**: Local development only (no Docker/CI/CD/production)
 
@@ -85,9 +86,11 @@ backend/
 │   ├── views.py             # API views/viewsets
 │   ├── urls.py              # URL routing
 │   ├── consumers.py         # WebSocket consumers (if real-time)
-│   ├── mqtt_handlers.py     # MQTT handlers (if sensor data)
+│   ├── mqtt_handlers.py     # MQTT handlers (if hardware integration)
 │   └── services.py          # Business logic
-├── models/                   # AI/ML model files (.pkl, .h5) - gitignored
+├── inference/                # Dedicated API app for ML model predictions
+├── ml_models/models/         # scikit-learn models (.pkl) - gitignored
+├── dl_models/models/         # TensorFlow/Keras models (.h5) - gitignored
 ├── tests/
 │   ├── test_models.py
 │   ├── test_api.py
@@ -106,6 +109,11 @@ frontend/
 │   └── utils/                # Utility functions
 └── tests/
     └── [feature].test.jsx
+
+firmware/
+├── src/                      # ESP32 main logic (main.cpp)
+├── include/                  # C++ headers
+└── lib/                      # Custom hardware libraries
 
 shared/                       # Optional: shared types/contracts
 └── contracts/                # API contract definitions

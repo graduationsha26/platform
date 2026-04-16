@@ -20,10 +20,10 @@ description: "Task list template for feature implementation"
 
 ## Path Conventions
 
-- **Single project**: `src/`, `tests/` at repository root
-- **Web app**: `backend/src/`, `frontend/src/`
-- **Mobile**: `api/src/`, `ios/src/` or `android/src/`
-- Paths shown below assume single project - adjust based on plan.md structure
+- **Backend (Django)**: `backend/[app_name]/`, `backend/tests/`
+- **Frontend (React)**: `frontend/src/`, `frontend/tests/`
+- **Firmware (ESP32)**: `firmware/src/`, `firmware/include/`
+- **Machine Learning**: `backend/ml_models/`, `backend/dl_models/`, `backend/inference/`
 
 <!-- 
   ============================================================================
@@ -50,7 +50,8 @@ description: "Task list template for feature implementation"
 
 - [ ] T001 Create project structure per implementation plan
 - [ ] T002 Initialize [language] project with [framework] dependencies
-- [ ] T003 [P] Configure linting and formatting tools
+- [ ] T003 Initialize backend/frontend/firmware dependencies
+- [ ] T004 [P] Configure linting and formatting tools
 
 ---
 
@@ -67,7 +68,8 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] T006 [P] Setup API routing and middleware structure
 - [ ] T007 Create base models/entities that all stories depend on
 - [ ] T008 Configure error handling and logging infrastructure
-- [ ] T009 Setup environment configuration management
+- [ ] T009 Configure ESP32 initial connection logic (if hardware required)
+- [ ] T010 Setup environment configuration management
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -83,17 +85,18 @@ Examples of foundational tasks (adjust based on your project):
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T010 [P] [US1] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T011 [P] [US1] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T010 [P] [US1] Contract test for [endpoint] in backend/tests/
+- [ ] T011 [P] [US1] Integration test for [user journey] in frontend/tests/
 
 ### Implementation for User Story 1
 
-- [ ] T012 [P] [US1] Create [Entity1] model in src/models/[entity1].py
-- [ ] T013 [P] [US1] Create [Entity2] model in src/models/[entity2].py
-- [ ] T014 [US1] Implement [Service] in src/services/[service].py (depends on T012, T013)
-- [ ] T015 [US1] Implement [endpoint/feature] in src/[location]/[file].py
-- [ ] T016 [US1] Add validation and error handling
-- [ ] T017 [US1] Add logging for user story 1 operations
+- [ ] T012 [P] [US1] Create Django model in backend/[app]/models.py
+- [ ] T013 [P] [US1] Create React component in frontend/src/components/
+- [ ] T014 [US1] Implement [Service] in backend/[app]/services.py (depends on T012, T013)
+- [ ] T015 [US1] Implement hardware logic in firmware/src/main.cpp (if applicable)
+- [ ] T016 [US1] Implement [endpoint/feature] in backend/[app]/views.py
+- [ ] T017 [US1] Add validation and error handling
+- [ ] T018 [US1] Add logging for user story 1 operations
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -153,7 +156,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX [P] Documentation updates in docs/
 - [ ] TXXX Code cleanup and refactoring
 - [ ] TXXX Performance optimization across all stories
-- [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
+- [ ] TXXX [P] Additional unit tests (if requested) in
 - [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
 
@@ -245,6 +248,7 @@ With multiple developers:
 - [P] tasks = different files, no dependencies
 - [Story] label maps task to specific user story for traceability
 - Each user story should be independently completable and testable
+- Ensure cross-stack alignment (Backend API matches Frontend Types and Firmware Payload)
 - Verify tests fail before implementing
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently

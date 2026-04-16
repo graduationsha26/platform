@@ -37,6 +37,7 @@ from utils.validators import (
     check_normalization,
     check_binary_labels
 )
+from utils.gravity_filter import design_gravity_filter, apply_gravity_filter, get_filter_params_dict
 
 
 def parse_arguments():
@@ -348,6 +349,46 @@ def main():
 
         # Step 3: Verify binary labels
         check_binary_labels(labels, "Initial labels")
+
+        # Step 3.5: Apply gravity high-pass filter to accelerometer channels.
+        # The filter removes the static gravity component from aX, aY, aZ so that
+        # downstream DL models (LSTM, CNN-1D) learn from tremor dynamics, not
+        # hand orientation.  Gyroscope channels (gX, gY, gZ) are left unchanged.
+        #
+        # Filter params: reuse filter_params.json if the PSMAD pipeline has already
+        # run (consistent sampling rate), otherwise default to 37 Hz.
+        filter_params_path = Path(output_dir) / 'filter_params.json'
+        if filter_params_path.exists():
+            with open(filter_params_path) as _fp:
+                _saved = json.load(_fp)
+            gravity_fs = float(_saved.get('sampling_rate_hz', 37.0))
+        else:
+            gravity_fs = 37.0
+
+        GRAVITY_CUTOFF_HZ = 0.5
+        GRAVITY_FILTER_ORDER = 2
+        print(f"\n[GRAVITY FILTER] Applying {GRAVITY_FILTER_ORDER}-order Butterworth high-pass "
+              f"filter at {GRAVITY_CUTOFF_HZ} Hz cutoff (fs={gravity_fs} Hz) to accelerometer axes...")
+        gravity_sos = design_gravity_filter(
+            cutoff_hz=GRAVITY_CUTOFF_HZ,
+            fs=gravity_fs,
+            order=GRAVITY_FILTER_ORDER,
+        )
+        features = apply_gravity_filter(features, gravity_sos)
+        print("[GRAVITY FILTER] Gravity component removed from aX, aY, aZ [OK]")
+
+        # Save filter params if not already saved by PSMAD pipeline
+        if not filter_params_path.exists():
+            os.makedirs(output_dir, exist_ok=True)
+            gravity_params = get_filter_params_dict(
+                cutoff_hz=GRAVITY_CUTOFF_HZ,
+                fs=gravity_fs,
+                order=GRAVITY_FILTER_ORDER,
+                sos=gravity_sos,
+            )
+            with open(filter_params_path, 'w') as _fp:
+                json.dump(gravity_params, _fp, indent=2)
+            print(f"[GRAVITY FILTER] Filter parameters saved to {filter_params_path}")
 
         # Step 4: Split train/test
         X_train, X_test, y_train, y_test, split_report = split_train_test(

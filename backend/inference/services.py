@@ -2,17 +2,47 @@
 
 import joblib
 import json
+import logging
 import os
 import time
 from pathlib import Path
 from typing import Dict, Tuple, Any, Optional
 
-# import tensorflow as tf  # Will be imported when needed
 import numpy as np
 
 from django.conf import settings
 
 from .exceptions import ModelNotFoundError, ModelLoadError, InferenceTimeoutError
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Gravity filter — still used by v1 models (backward compatibility)
+# ---------------------------------------------------------------------------
+try:
+    from ml_data.utils.gravity_filter import apply_gravity_filter  # noqa: F401
+    _GRAVITY_FILTER_AVAILABLE = True
+except ImportError:
+    _GRAVITY_FILTER_AVAILABLE = False
+    logger.warning(
+        'ml_data.utils.gravity_filter not importable. '
+        'Gravity filtering will be skipped for v1 models.'
+    )
+
+# ---------------------------------------------------------------------------
+# Shared feature extraction — v2 pipeline
+# ---------------------------------------------------------------------------
+try:
+    from ml_data.utils.feature_extractors import extract_window_features
+    _FEATURE_EXTRACTOR_AVAILABLE = True
+except ImportError:
+    _FEATURE_EXTRACTOR_AVAILABLE = False
+    logger.warning(
+        'ml_data.utils.feature_extractors not importable. '
+        'v2 feature extraction will be unavailable.'
+    )
+
+AXIS_NAMES = ['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ']
 
 
 class ModelCache:
@@ -22,18 +52,19 @@ class ModelCache:
     Implements lazy loading: models are loaded on first access and cached in memory
     for subsequent requests. This eliminates 500ms-2s load time per request.
 
+    Cache stores: (model_object, metadata_dict, scaler_or_None)
     Thread-safe for concurrent predictions (models are read-only after loading).
     """
 
     _instance = None
-    _models = {}  # {model_name: (model_object, metadata_dict)}
+    _models = {}  # {model_name: (model_object, metadata_dict, scaler_or_None)}
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def get_model(self, model_name: str) -> Tuple[Any, Dict]:
+    def get_model(self, model_name: str) -> Tuple[Any, Dict, Optional[Any]]:
         """
         Get model from cache or load if not cached.
 
@@ -41,42 +72,62 @@ class ModelCache:
             model_name: Model identifier (rf, svm, lstm, cnn_1d)
 
         Returns:
-            Tuple of (model_object, metadata_dict)
+            Tuple of (model_object, metadata_dict, scaler_or_None)
 
         Raises:
             ModelNotFoundError: If model file doesn't exist
             ModelLoadError: If model loading fails
         """
-        # Check cache first
         if model_name in self._models:
             return self._models[model_name]
 
-        # Load model and cache it
         model_loader = ModelLoader()
         model_path = model_loader._get_model_path(model_name)
         metadata_path = model_loader._get_metadata_path(model_name)
 
-        # Verify files exist
         if not os.path.exists(model_path):
             raise ModelNotFoundError(
-                f"Model file not found: {model_name}. "
-                f"Please ensure Feature 005 (ML models) or Feature 006 (DL models) is complete."
+                f'Model file not found: {model_name}. '
+                f'Please train the model first.'
             )
 
         if not os.path.exists(metadata_path):
             raise ModelNotFoundError(
-                f"Model metadata not found: {model_name}. "
-                f"Expected metadata file at {metadata_path}"
+                f'Model metadata not found: {model_name}. '
+                f'Expected metadata file at {metadata_path}'
             )
 
-        # Load model and metadata
         model_obj = model_loader.load_model(model_path)
         metadata = model_loader.load_metadata(metadata_path)
 
-        # Cache for future requests
-        self._models[model_name] = (model_obj, metadata)
+        # Pre-parse gravity filter SOS coefficients for v1 models
+        if 'filter_params' in metadata and 'sos_coefficients' in metadata['filter_params']:
+            metadata['filter_params']['_sos_array'] = np.array(
+                metadata['filter_params']['sos_coefficients'],
+                dtype=np.float64,
+            )
 
-        return model_obj, metadata
+        # Load StandardScaler for v2 models (scaler_file key present in metadata)
+        scaler = None
+        if 'scaler_file' in metadata:
+            scaler_filename = metadata['scaler_file']
+            scaler_path = str(Path(model_path).parent / scaler_filename)
+            if os.path.exists(scaler_path):
+                try:
+                    scaler = joblib.load(scaler_path)
+                    logger.info(f'Scaler loaded: {scaler_path}')
+                except Exception as e:
+                    raise ModelLoadError(
+                        f'Failed to load scaler from {scaler_path}: {e}'
+                    )
+            else:
+                raise ModelNotFoundError(
+                    f'Scaler file not found: {scaler_path}. '
+                    f'Run train_random_forest.py to regenerate v2 artifacts.'
+                )
+
+        self._models[model_name] = (model_obj, metadata, scaler)
+        return model_obj, metadata, scaler
 
     def clear_cache(self):
         """Clear all cached models (useful for testing or reloading)."""
@@ -95,136 +146,66 @@ class ModelLoader:
 
     @staticmethod
     def load_model(model_path: str):
-        """
-        Load model from file.
-
-        Args:
-            model_path: Path to model file (.pkl or .h5)
-
-        Returns:
-            Loaded model object
-
-        Raises:
-            ModelLoadError: If loading fails
-        """
         try:
             file_ext = Path(model_path).suffix.lower()
 
             if file_ext == '.pkl':
-                # Load scikit-learn model
-                model = joblib.load(model_path)
-                return model
+                return joblib.load(model_path)
 
             elif file_ext in ['.h5', '.keras']:
-                # Load TensorFlow/Keras model
                 import tensorflow as tf
-                model = tf.keras.models.load_model(model_path)
-                return model
+                return tf.keras.models.load_model(model_path)
 
             else:
-                raise ValueError(f"Unsupported model file extension: {file_ext}")
+                raise ValueError(f'Unsupported model file extension: {file_ext}')
 
         except Exception as e:
-            raise ModelLoadError(
-                f"Failed to load model from {model_path}: {str(e)}"
-            )
+            raise ModelLoadError(f'Failed to load model from {model_path}: {str(e)}')
 
     @staticmethod
     def load_metadata(metadata_path: str) -> Dict:
-        """
-        Load model metadata from JSON file.
-
-        Args:
-            metadata_path: Path to metadata JSON file
-
-        Returns:
-            Metadata dictionary
-
-        Raises:
-            ModelLoadError: If metadata loading fails
-        """
         try:
             with open(metadata_path, 'r') as f:
-                metadata = json.load(f)
-            return metadata
+                return json.load(f)
         except Exception as e:
-            raise ModelLoadError(
-                f"Failed to load metadata from {metadata_path}: {str(e)}"
-            )
+            raise ModelLoadError(f'Failed to load metadata from {metadata_path}: {str(e)}')
 
     @staticmethod
     def detect_model_type(model_path: str) -> str:
-        """
-        Detect model type from file extension.
-
-        Args:
-            model_path: Path to model file
-
-        Returns:
-            'ml' for .pkl files, 'dl' for .h5/.keras files
-
-        Raises:
-            ValueError: If file extension not recognized
-        """
         file_ext = Path(model_path).suffix.lower()
-
         if file_ext == '.pkl':
             return 'ml'
         elif file_ext in ['.h5', '.keras']:
             return 'dl'
         else:
-            raise ValueError(f"Cannot detect model type from extension: {file_ext}")
+            raise ValueError(f'Cannot detect model type from extension: {file_ext}')
 
     def _get_model_path(self, model_name: str) -> str:
-        """
-        Get full path to model file.
-
-        Args:
-            model_name: Model identifier (rf, svm, lstm, cnn_1d)
-
-        Returns:
-            Full path to model file
-        """
-        from django.conf import settings
-
-        # Map model names to file paths
         model_map = {
-            'rf': settings.ML_MODELS_DIR / 'rf_model.pkl',
-            'svm': settings.ML_MODELS_DIR / 'svm_model.pkl',
-            'lstm': settings.DL_MODELS_DIR / 'lstm_model.h5',
+            'rf':     settings.ML_MODELS_DIR / 'rf_model_v2.pkl',
+            'svm':    settings.ML_MODELS_DIR / 'svm_model.pkl',
+            'lstm':   settings.DL_MODELS_DIR / 'lstm_model.h5',
             'cnn_1d': settings.DL_MODELS_DIR / 'cnn_1d_model.h5',
         }
 
         if model_name not in model_map:
             raise ModelNotFoundError(
-                f"Unknown model name: {model_name}. "
-                f"Valid options: {list(model_map.keys())}"
+                f'Unknown model name: {model_name}. '
+                f'Valid options: {list(model_map.keys())}'
             )
 
         return str(model_map[model_name])
 
     def _get_metadata_path(self, model_name: str) -> str:
-        """
-        Get full path to model metadata JSON file.
-
-        Args:
-            model_name: Model identifier (rf, svm, lstm, cnn_1d)
-
-        Returns:
-            Full path to metadata JSON file
-        """
-        from django.conf import settings
-
-        # Map model names to metadata paths
         metadata_map = {
-            'rf': settings.ML_MODELS_DIR / 'rf_model.json',
-            'svm': settings.ML_MODELS_DIR / 'svm_model.json',
-            'lstm': settings.DL_MODELS_DIR / 'lstm_model.json',
+            'rf':     settings.ML_MODELS_DIR / 'rf_model_v2.json',
+            'svm':    settings.ML_MODELS_DIR / 'svm_model.json',
+            'lstm':   settings.DL_MODELS_DIR / 'lstm_model.json',
             'cnn_1d': settings.DL_MODELS_DIR / 'cnn_1d_model.json',
         }
 
         if model_name not in metadata_map:
-            raise ModelNotFoundError(f"Unknown model name: {model_name}")
+            raise ModelNotFoundError(f'Unknown model name: {model_name}')
 
         return str(metadata_map[model_name])
 
@@ -233,82 +214,169 @@ class PreprocessingService:
     """
     Service for preprocessing sensor data before inference.
 
-    Automatically detects model type and applies correct preprocessing:
-    - ML models: Feature extraction, StandardScaler
-    - DL models: Sequence normalization
+    v2 models (identified by 'pipeline_params' in metadata):
+      - Expect input as a 2-D array (window_size, 6) in physical units
+      - Extract 42 features via shared extract_window_features()
+      - Apply saved StandardScaler via scaler.transform()
+      - No gravity filter (FFT handles frequency separation)
+
+    v1 models (legacy, no 'pipeline_params'):
+      - Expect a 1-D array of 6 raw sensor values
+      - Apply gravity filter (if filter_params in metadata)
+      - Apply scaler params embedded in metadata JSON
     """
 
-    def preprocess(self, data: np.ndarray, model_type: str, metadata: Dict) -> np.ndarray:
+    def preprocess(
+        self,
+        data: np.ndarray,
+        model_type: str,
+        metadata: Dict,
+        scaler=None,
+    ) -> np.ndarray:
         """
-        Preprocess data based on model type.
+        Preprocess data based on model version and type.
 
         Args:
-            data: Raw sensor data
+            data: Sensor data — (window_size, 6) array for v2 ML models,
+                  or 1-D (6,) array for v1 ML models, or (128, 6) for DL models.
             model_type: 'ml' or 'dl'
-            metadata: Model metadata with preprocessing params
+            metadata: Model metadata dict
+            scaler: Loaded StandardScaler for v2 models (or None for v1)
 
         Returns:
-            Preprocessed data ready for model inference
+            Preprocessed feature vector ready for model inference
         """
+        is_v2 = 'pipeline_params' in metadata
+
         if model_type == 'ml':
-            return self._preprocess_ml(data, metadata)
+            if is_v2:
+                return self._preprocess_ml_v2(data, metadata, scaler)
+            else:
+                # v1 legacy path
+                data = self._apply_gravity_filter(data, model_type, metadata)
+                return self._preprocess_ml_v1(data, metadata)
         elif model_type == 'dl':
             return self._preprocess_dl(data, metadata)
         else:
-            raise ValueError(f"Unknown model type: {model_type}")
+            raise ValueError(f'Unknown model type: {model_type}')
 
-    def _preprocess_ml(self, data: np.ndarray, metadata: Dict) -> np.ndarray:
+    # -----------------------------------------------------------------------
+    # v2 preprocessing (new pipeline)
+    # -----------------------------------------------------------------------
+
+    def _preprocess_ml_v2(
+        self,
+        data: np.ndarray,
+        metadata: Dict,
+        scaler,
+    ) -> np.ndarray:
         """
-        Preprocess data for ML models (RF, SVM).
+        v2 ML preprocessing:
+          1. Validate input shape: must be (window_size, 6)
+          2. Extract 42 features via extract_window_features()
+          3. Scale via StandardScaler.transform()
 
         Args:
-            data: Input features (6 raw sensor features [aX, aY, aZ, gX, gY, gZ])
-            metadata: Model metadata with StandardScaler parameters
+            data: 2-D array of shape (window_size, 6) in physical units
+            metadata: Model metadata with pipeline_params
+            scaler: Fitted StandardScaler loaded from scaler .pkl
 
         Returns:
-            Preprocessed features ready for ML model
+            Scaled 42-feature vector, shape (1, 42)
         """
-        # Ensure data is numpy array
+        if not _FEATURE_EXTRACTOR_AVAILABLE:
+            raise RuntimeError(
+                'ml_data.utils.feature_extractors is not importable. '
+                'Cannot perform v2 preprocessing.'
+            )
+
+        data = np.asarray(data, dtype=np.float64)
+
+        if data.ndim != 2 or data.shape[1] != 6:
+            raise ValueError(
+                f'v2 ML model expects input shape (window_size, 6), got {data.shape}. '
+                'Provide a full sensor window, not a single reading.'
+            )
+
+        pipeline_params = metadata['pipeline_params']
+        sampling_rate_hz = float(pipeline_params.get('training_sampling_rate_hz', 30.0))
+        low_hz  = float(pipeline_params.get('fft_tremor_band_low_hz', 3.0))
+        high_hz = float(pipeline_params.get('fft_tremor_band_high_hz', 12.0))
+
+        # Extract 42 features — identical function used during training
+        feature_vector = extract_window_features(
+            data, AXIS_NAMES, sampling_rate_hz, low_hz, high_hz
+        )  # shape: (42,)
+
+        if scaler is None:
+            raise RuntimeError(
+                'v2 model requires a StandardScaler but none was provided. '
+                'Ensure the scaler .pkl was loaded alongside the model.'
+            )
+
+        # Scale and return 2-D for sklearn predict
+        return scaler.transform(feature_vector.reshape(1, -1))  # shape: (1, 42)
+
+    # -----------------------------------------------------------------------
+    # v1 legacy preprocessing (kept for backward compatibility)
+    # -----------------------------------------------------------------------
+
+    def _apply_gravity_filter(
+        self, data: np.ndarray, model_type: str, metadata: Dict
+    ) -> np.ndarray:
+        """Apply gravity high-pass filter to accelerometer channels (v1 models only)."""
+        if not _GRAVITY_FILTER_AVAILABLE:
+            return data
+
+        filter_params = metadata.get('filter_params')
+        if not filter_params:
+            return data
+
+        if '_sos_array' in filter_params:
+            sos = filter_params['_sos_array']
+        elif 'sos_coefficients' in filter_params:
+            sos = np.array(filter_params['sos_coefficients'], dtype=np.float64)
+        else:
+            logger.warning('filter_params present but sos_coefficients missing — skipping')
+            return data
+
+        data = np.asarray(data, dtype=np.float64)
+
+        if model_type == 'ml':
+            was_1d = data.ndim == 1
+            if was_1d:
+                data = data[np.newaxis, :]
+            data = apply_gravity_filter(data, sos)
+            if was_1d:
+                data = data[0]
+        elif model_type == 'dl':
+            if data.ndim == 2:
+                data = apply_gravity_filter(data, sos)
+
+        return data
+
+    def _preprocess_ml_v1(self, data: np.ndarray, metadata: Dict) -> np.ndarray:
+        """v1 ML preprocessing: apply embedded scaler params from metadata JSON."""
         data = np.array(data)
 
-        # For ML models, data should be 6 raw sensor features [aX, aY, aZ, gX, gY, gZ]
-        # Apply StandardScaler if scaler params exist in metadata
         if 'preprocessing' in metadata and 'scaler_params' in metadata['preprocessing']:
             scaler_params = metadata['preprocessing']['scaler_params']
-
             if 'mean' in scaler_params and 'std' in scaler_params:
                 mean = np.array(scaler_params['mean'])
                 std = np.array(scaler_params['std'])
-
-                # Apply standardization: (x - mean) / std
                 data = (data - mean) / std
 
         return data
 
     def _preprocess_dl(self, data: np.ndarray, metadata: Dict) -> np.ndarray:
-        """
-        Preprocess data for DL models (LSTM, 1D-CNN).
-
-        Args:
-            data: Raw sequences (128 timesteps × 6 axes)
-            metadata: Model metadata with normalization parameters
-
-        Returns:
-            Preprocessed sequences ready for DL model
-        """
-        # Ensure data is numpy array
+        """DL model preprocessing: apply normalization params from metadata."""
         data = np.array(data)
 
-        # For DL models, data should be 128×6 sequences
-        # Apply normalization if params exist in metadata
         if 'preprocessing' in metadata and 'normalization' in metadata['preprocessing']:
             norm_params = metadata['preprocessing']['normalization']
-
             if 'mean' in norm_params and 'std' in norm_params:
                 mean = np.array(norm_params['mean'])
                 std = np.array(norm_params['std'])
-
-                # Apply normalization per axis
                 data = (data - mean) / std
 
         return data
@@ -318,7 +386,7 @@ class SeverityMapper:
     """
     Maps model prediction probabilities to severity levels (0-3).
 
-    Thresholds per spec FR-019:
+    Thresholds:
     - 0 (none): probability < 0.3
     - 1 (mild): probability 0.3-0.5
     - 2 (moderate): probability 0.5-0.7
@@ -327,23 +395,14 @@ class SeverityMapper:
 
     @staticmethod
     def map_to_severity(probability: float) -> int:
-        """
-        Map prediction probability to severity level.
-
-        Args:
-            probability: Model prediction probability (0.0-1.0)
-
-        Returns:
-            Severity level (0-3)
-        """
         if probability < 0.3:
-            return 0  # None
+            return 0
         elif probability < 0.5:
-            return 1  # Mild
+            return 1
         elif probability < 0.7:
-            return 2  # Moderate
+            return 2
         else:
-            return 3  # Severe
+            return 3
 
 
 class InferenceService:
@@ -351,7 +410,7 @@ class InferenceService:
     Main inference service that orchestrates the inference workflow.
 
     Workflow:
-    1. Load model (with caching)
+    1. Load model (with caching) — returns (model, metadata, scaler)
     2. Preprocess input data
     3. Execute model prediction
     4. Map probability to severity
@@ -375,62 +434,53 @@ class InferenceService:
 
         Args:
             model_name: Model to use (rf, svm, lstm, cnn_1d)
-            sensor_data: Raw sensor data (will be preprocessed)
-            include_metadata: Whether to include P3 metadata
+            sensor_data: For v2 RF: 2-D array (window_size, 6) in physical units.
+                         For v1 models: 1-D (6,) raw sensor values.
+                         For DL: (128, 6) sequence.
+            include_metadata: Whether to include confidence/timing in response
 
         Returns:
             Dictionary with prediction, severity, and optional metadata
 
         Raises:
-            InferenceError: If prediction fails
-            InferenceTimeoutError: If prediction takes >5 seconds
+            ModelNotFoundError, ModelLoadError, InferenceTimeoutError
         """
         start_time = time.perf_counter()
 
         try:
-            # 1. Load model (with caching)
-            model, metadata = self.model_cache.get_model(model_name)
+            # 1. Load model (with caching) — now returns 3-tuple
+            model, metadata, scaler = self.model_cache.get_model(model_name)
 
             # 2. Detect model type and preprocess
             model_path = self.model_loader._get_model_path(model_name)
             model_type = self.model_loader.detect_model_type(model_path)
 
             preprocessed_data = self.preprocessing_service.preprocess(
-                sensor_data, model_type, metadata
+                sensor_data, model_type, metadata, scaler=scaler
             )
 
             # 3. Execute model prediction
             if model_type == 'ml':
-                # scikit-learn models
-                # Reshape to 2D if needed (sklearn expects 2D)
                 if preprocessed_data.ndim == 1:
                     preprocessed_data = preprocessed_data.reshape(1, -1)
 
-                # Get probability for positive class (tremor detected)
                 if hasattr(model, 'predict_proba'):
-                    proba = model.predict_proba(preprocessed_data)[0][1]  # Probability of class 1
+                    proba = model.predict_proba(preprocessed_data)[0][1]
                 else:
-                    # If no predict_proba, use predict and assume binary
                     pred = model.predict(preprocessed_data)[0]
                     proba = float(pred)
 
                 prediction = bool(proba >= 0.5)
 
             elif model_type == 'dl':
-                # TensorFlow/Keras models
-                # Ensure 3D shape for DL models (batch_size, timesteps, features)
                 if preprocessed_data.ndim == 2:
                     preprocessed_data = np.expand_dims(preprocessed_data, axis=0)
 
-                # Get prediction
                 pred_output = model.predict(preprocessed_data, verbose=0)
 
-                # Extract probability (assuming binary classification)
                 if pred_output.shape[-1] == 1:
-                    # Single output neuron (sigmoid)
                     proba = float(pred_output[0][0])
                 else:
-                    # Multiple output neurons (softmax) - use class 1
                     proba = float(pred_output[0][1])
 
                 prediction = bool(proba >= 0.5)
@@ -441,10 +491,9 @@ class InferenceService:
             # 5. Calculate inference time
             inference_time_ms = int((time.perf_counter() - start_time) * 1000)
 
-            # Check timeout (5 seconds)
             if inference_time_ms > 5000:
                 raise InferenceTimeoutError(
-                    f"Inference took {inference_time_ms}ms (>5000ms limit)"
+                    f'Inference took {inference_time_ms}ms (>5000ms limit)'
                 )
 
             # 6. Build result
@@ -453,31 +502,26 @@ class InferenceService:
                 'severity': severity,
             }
 
-            # Add P3 metadata if requested
             if include_metadata:
                 result['confidence_score'] = float(proba)
                 result['inference_time_ms'] = inference_time_ms
 
-                # Model version from metadata
-                if 'version' in metadata and 'trained_date' in metadata:
-                    model_version = f"{model_name}_v{metadata['version']}_{metadata['trained_date'][:10]}"
-                    result['model_version'] = model_version
+                if 'version' in metadata:
+                    result['model_version'] = f'{model_name}_v{metadata["version"]}'
 
             return result
 
         except (ModelNotFoundError, ModelLoadError, InferenceTimeoutError):
-            # Re-raise specific errors
             raise
 
         except Exception as e:
-            # Wrap unexpected errors
             from .exceptions import InferenceError
-            raise InferenceError(f"Inference failed: {str(e)}")
+            raise InferenceError(f'Inference failed: {str(e)}')
 
 
 class InputValidationService:
     """
-    Service for validating and assessing input data quality (P3 feature).
+    Service for validating and assessing input data quality.
 
     Checks for:
     - Missing values (NaN/Inf)
@@ -487,45 +531,14 @@ class InputValidationService:
 
     @staticmethod
     def check_missing_values(data: np.ndarray) -> bool:
-        """
-        Check for NaN or Inf values in data.
-
-        Args:
-            data: Sensor data array
-
-        Returns:
-            True if missing/invalid values detected, False otherwise
-        """
         return bool(np.any(np.isnan(data)) or np.any(np.isinf(data)))
 
     @staticmethod
     def check_out_of_range_values(data: np.ndarray) -> bool:
-        """
-        Check if sensor values are outside expected range.
-
-        Typical range: -10 to +10
-        Warning range: -50 to +50
-
-        Args:
-            data: Sensor data array
-
-        Returns:
-            True if values outside warning range, False otherwise
-        """
         return bool(np.any(data < -10) or np.any(data > 10))
 
     @staticmethod
     def assess_overall_quality(missing_values: bool, out_of_range: bool) -> str:
-        """
-        Determine overall data quality rating.
-
-        Args:
-            missing_values: Whether missing/invalid values detected
-            out_of_range: Whether out-of-range values detected
-
-        Returns:
-            'good', 'degraded', or 'poor'
-        """
         if missing_values:
             return 'poor'
         elif out_of_range:
@@ -535,15 +548,6 @@ class InputValidationService:
 
     @staticmethod
     def assess_data_quality(data: np.ndarray) -> Dict[str, Any]:
-        """
-        Assess input data quality.
-
-        Args:
-            data: Sensor data array
-
-        Returns:
-            Dictionary with data_quality, missing_values, out_of_range_values
-        """
         missing = InputValidationService.check_missing_values(data)
         out_of_range = InputValidationService.check_out_of_range_values(data)
         quality = InputValidationService.assess_overall_quality(missing, out_of_range)

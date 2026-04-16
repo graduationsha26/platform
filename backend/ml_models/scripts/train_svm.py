@@ -8,18 +8,26 @@ Usage:
     python backend/ml_models/scripts/train_svm.py
 """
 
+import json
 import os
 import sys
 import time
 import argparse
 import logging
 from datetime import datetime
+from pathlib import Path
 import numpy as np
+import pandas as pd
 from sklearn.svm import SVC
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
+from sklearn.preprocessing import StandardScaler
+
+# Resolve backend/ directory from this script's location so paths work
+# regardless of which directory the script is invoked from.
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, str(_BACKEND_DIR))
 from ml_models.scripts.utils.model_io import load_feature_data, save_model, create_metadata
 from ml_models.scripts.utils.evaluation import evaluate_model, format_metrics_string
 
@@ -35,16 +43,10 @@ def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description='Train SVM classifier for tremor detection')
     parser.add_argument(
-        '--input-dir',
+        '--input',
         type=str,
-        default='backend/ml_data/processed',
-        help='Directory containing train_features.csv and test_features.csv'
-    )
-    parser.add_argument(
-        '--output-dir',
-        type=str,
-        default='backend/ml_models/models',
-        help='Directory to save trained model and metadata'
+        default=str(_BACKEND_DIR / 'ml_data' / 'processed' / 'ready_for_training_features.csv'),
+        help='Path to ready_for_training_features.csv (42 features + label)'
     )
     parser.add_argument(
         '--random-state',
@@ -68,10 +70,10 @@ def validate_data(X_train, y_train, X_test, y_test):
     logger.info("Validating input data...")
 
     # Check shapes
-    if X_train.shape[1] != 30:
-        raise ValueError(f"Expected 30 features, got {X_train.shape[1]}")
-    if X_test.shape[1] != 30:
-        raise ValueError(f"Expected 30 features in test set, got {X_test.shape[1]}")
+    if X_train.shape[1] != 42:
+        raise ValueError(f"Expected 42 features, got {X_train.shape[1]}")
+    if X_test.shape[1] != 42:
+        raise ValueError(f"Expected 42 features in test set, got {X_test.shape[1]}")
 
     # Check for NaN/Inf
     if np.any(np.isnan(X_train)) or np.any(np.isinf(X_train)):
@@ -90,6 +92,30 @@ def validate_data(X_train, y_train, X_test, y_test):
     logger.info("[OK] Data validation passed")
 
 
+def cleanup_old_svm_files():
+    """Delete superseded SVM model and metrics files after successful training."""
+    models_dir_files = [
+        "svm_model.pkl", "svm_model.json",
+        "svm_rbf.pkl", "svm_rbf.json",
+    ]
+    root_files = [
+        "svm_model.pkl", "svm_model.json",
+        "svm_rbf.pkl", "svm_rbf.json",
+        "svm_model_metrics.json",
+    ]
+    for fname in models_dir_files:
+        path = _BACKEND_DIR / 'ml_models' / 'models' / fname
+        if path.exists():
+            path.unlink()
+            logger.info(f"Removed: {path}")
+    for fname in root_files:
+        path = _BACKEND_DIR / 'ml_models' / fname
+        if path.exists():
+            path.unlink()
+            logger.info(f"Removed: {path}")
+    logger.info("[OK] Old SVM files cleaned up")
+
+
 def main():
     """Main training function."""
     args = parse_arguments()
@@ -101,13 +127,31 @@ def main():
 
     try:
         # Step 1: Load data
-        logger.info(f"Loading training data from {args.input_dir}/...")
-        train_path = os.path.join(args.input_dir, 'train_features.csv')
-        test_path = os.path.join(args.input_dir, 'test_features.csv')
+        logger.info(f"Loading data from {args.input}...")
+        if not os.path.exists(args.input):
+            raise FileNotFoundError(f"Input file not found: {args.input}")
+        df = pd.read_csv(args.input)
+        if len(df.columns) != 43:
+            raise ValueError(f"Expected 43 columns (42 features + label), got {len(df.columns)}")
+        if 'label' not in df.columns:
+            raise ValueError("Input CSV missing 'label' column")
+        logger.info(f"Dataset: {len(df)} total samples, {len(df.columns)-1} features")
 
-        X_train, y_train, X_test, y_test = load_feature_data(train_path, test_path)
+        X = df.drop('label', axis=1).values
+        y = df['label'].values
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=args.random_state, stratify=y
+        )
         logger.info(f"Train set: {X_train.shape[0]} samples, {X_train.shape[1]} features")
         logger.info(f"Test set: {X_test.shape[0]} samples, {X_test.shape[1]} features")
+        logger.info(f"Label distribution — Train: Control={int((y_train==0).sum())}, Parkinson={int((y_train==1).sum())} | Test: {int((y_test==0).sum())}, {int((y_test==1).sum())}")
+
+        # Step 1b: Scale features (SVM with RBF kernel is sensitive to feature scale)
+        logger.info("Applying StandardScaler (fit on train only)...")
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+        logger.info("[OK] Features scaled")
 
         # Step 2: Validate data
         validate_data(X_train, y_train, X_test, y_test)
@@ -138,7 +182,7 @@ def main():
 
         # Step 5: Execute GridSearchCV
         logger.info("Starting GridSearchCV (this may take several minutes)...")
-        grid_search.fit(X_train, y_train)
+        grid_search.fit(X_train_scaled, y_train)
 
         # Step 6: Extract best model and parameters
         logger.info("GridSearchCV complete!")
@@ -155,7 +199,7 @@ def main():
 
         # Step 7: Evaluate on test set
         logger.info("Evaluating on test set...")
-        metrics = evaluate_model(best_model, X_test, y_test)
+        metrics = evaluate_model(best_model, X_test_scaled, y_test)
 
         # Log metrics
         logger.info(format_metrics_string(metrics))
@@ -188,28 +232,54 @@ def main():
                 "training_time_seconds": float(training_time),
                 "training_samples": int(X_train.shape[0]),
                 "test_samples": int(X_test.shape[0]),
+                "feature_count": int(X_train.shape[1]),
+                "dataset_source": os.path.basename(args.input),
                 "random_state": args.random_state,
-                "data_source": f"{args.input_dir}/train_features.csv, {args.input_dir}/test_features.csv"
+                "scaled": True,
             }
         )
 
+        # Step 8b: Embed gravity filter parameters in metadata.
+        # The inference service reads filter_params from the model metadata to apply
+        # the identical preprocessing to live sensor data (FR-005, FR-008).
+        filter_params_path = str(_BACKEND_DIR / 'ml_data' / 'processed' / 'filter_params.json')
+        if os.path.exists(filter_params_path):
+            with open(filter_params_path) as _fp:
+                metadata["filter_params"] = json.load(_fp)
+            logger.info("[OK] Gravity filter parameters embedded in metadata")
+        else:
+            logger.warning(
+                f"[WARNING] filter_params.json not found at {filter_params_path}. "
+                "Run 4_psmad_pipeline.py first. Metadata saved WITHOUT filter_params."
+            )
+
         # Step 9: Save model and metadata
-        logger.info(f"Saving model to {args.output_dir}/...")
-        model_path, metadata_path = save_model(
+        output_dir = str(_BACKEND_DIR / 'ml_models' / 'models')
+        logger.info(f"Saving model to {output_dir}/...")
+        model_path, _ = save_model(
             model=best_model,
             metadata=metadata,
-            output_dir=args.output_dir,
-            model_name="svm_rbf"
+            output_dir=output_dir,
+            model_name="svm_model_v1"
         )
         logger.info(f"Model saved: {model_path}")
-        logger.info(f"Metadata saved: {metadata_path}")
+
+        metrics_path = str(_BACKEND_DIR / 'ml_models' / 'svm_model_metrics_v1.json')
+        os.makedirs(os.path.dirname(metrics_path), exist_ok=True)
+        with open(metrics_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        logger.info(f"Metrics saved: {metrics_path}")
+
+        # Step 9b: Clean up superseded SVM files
+        cleanup_old_svm_files()
 
         # Step 10: Validate model loading
         logger.info("Validating model loading...")
-        loaded_model, loaded_metadata = __import__('ml_models.scripts.utils.model_io', fromlist=['load_model']).load_model(model_path, metadata_path)
+        import joblib
+        loaded_model = joblib.load(model_path)
 
-        # Test prediction on a small sample
-        X_sample = X_test[:5]
+        # Test prediction on a small sample (use scaled test data)
+        X_sample = X_test_scaled[:5]
         predictions = loaded_model.predict(X_sample)
         logger.info(f"Test predictions: {predictions}")
         logger.info("[OK] Model loading validation passed")
@@ -224,8 +294,8 @@ def main():
 
     except FileNotFoundError as e:
         logger.error(f"[ERROR] File not found: {e}")
-        logger.error("[ERROR] Please ensure Feature 004 (ML/DL Data Preparation) is complete")
-        logger.error("[ERROR] Expected files: train_features.csv, test_features.csv in backend/ml_data/processed/")
+        logger.error("[ERROR] Please ensure Feature 036 (PSMAD preprocessing) is complete")
+        logger.error("[ERROR] Expected file: backend/ml_data/processed/ready_for_training_features.csv")
         return 1
 
     except ValueError as e:

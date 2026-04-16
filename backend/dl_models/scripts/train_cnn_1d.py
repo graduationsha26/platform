@@ -9,6 +9,7 @@ Usage:
     python backend/dl_models/scripts/train_cnn_1d.py --input-dir path/to/data --output-dir path/to/models
 """
 
+import json
 import os
 import sys
 import time
@@ -16,13 +17,19 @@ import argparse
 import logging
 import random
 from datetime import datetime
+from pathlib import Path
 import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import EarlyStopping
 
+# Resolve backend/ directory from this script's location so paths work
+# regardless of which directory the script is invoked from.
+# Script lives at: backend/dl_models/scripts/train_cnn_1d.py
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, str(_BACKEND_DIR))
 from dl_models.scripts.utils.model_io import load_sequence_data, save_model, create_metadata
 from dl_models.scripts.utils.evaluation import evaluate_model, format_metrics_string
 from dl_models.scripts.utils.architectures import build_cnn_1d_model
@@ -41,13 +48,13 @@ def parse_arguments():
     parser.add_argument(
         '--input-dir',
         type=str,
-        default='backend/ml_data/processed',
+        default=str(_BACKEND_DIR / 'ml_data' / 'processed'),
         help='Directory containing train_sequences.npy, test_sequences.npy, etc.'
     )
     parser.add_argument(
         '--output-dir',
         type=str,
-        default='backend/dl_models/models',
+        default=str(_BACKEND_DIR / 'dl_models' / 'models'),
         help='Directory to save trained model and metadata'
     )
     parser.add_argument(
@@ -256,6 +263,20 @@ def main():
             training_history=training_history_dict,
             training_info=training_info
         )
+
+        # Step 9b: Embed gravity filter parameters in metadata.
+        # The inference service reads filter_params from the model metadata to apply
+        # the identical preprocessing to live sensor data (FR-005, FR-008).
+        filter_params_path = os.path.join(args.input_dir, "filter_params.json")
+        if os.path.exists(filter_params_path):
+            with open(filter_params_path) as _fp:
+                metadata["filter_params"] = json.load(_fp)
+            logger.info("[OK] Gravity filter parameters embedded in metadata")
+        else:
+            logger.warning(
+                f"[WARNING] filter_params.json not found at {filter_params_path}. "
+                "Run 4_psmad_pipeline.py first. Metadata saved WITHOUT filter_params."
+            )
 
         # Step 10: Save model and metadata (T040)
         logger.info(f"Saving model to {args.output_dir}/...")

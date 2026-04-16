@@ -2,7 +2,7 @@
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from authentication.permissions import IsDoctorOrAdmin
 from rest_framework import status
 from django.utils import timezone
 
@@ -38,7 +38,7 @@ class InferenceAPIView(APIView):
         - (P3) confidence_score, inference_time_ms, model_version, input_validation
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsDoctorOrAdmin]
 
     def post(self, request):
         """

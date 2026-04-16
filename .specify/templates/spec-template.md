@@ -26,7 +26,7 @@
 
 **Why this priority**: [Explain the value and why it has this priority level]
 
-**Independent Test**: [Describe how this can be tested independently - e.g., "Can be fully tested by [specific action] and delivers [specific value]"]
+**Independent Test**: [Describe how this can be tested independently - e.g., "Can be fully tested by sending a mock MQTT payload and verifying the React dashboard updates"]
 
 **Acceptance Scenarios**:
 
@@ -72,8 +72,9 @@
   Fill them out with the right edge cases.
 -->
 
-- What happens when [boundary condition]?
-- How does system handle [error scenario]?
+- What happens when [hardware/ESP32 disconnects unexpectedly]?
+- How does system handle [malformed MQTT payload or WebSocket timeout]?
+- What happens when [inference model returns low confidence prediction]?
 
 ## Requirements *(mandatory)*
 
@@ -84,16 +85,15 @@
 
 ### Functional Requirements
 
-- **FR-001**: System MUST [specific capability, e.g., "allow users to create accounts"]
-- **FR-002**: System MUST [specific capability, e.g., "validate email addresses"]  
-- **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
-- **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
-- **FR-005**: System MUST [behavior, e.g., "log all security events"]
+- **FR-001**: System MUST [specific capability, e.g., "allow Doctors to assign devices to patient profiles"]
+- **FR-002**: System MUST [data requirement, e.g., "process incoming 6-axis IMU data via WebSocket"]  
+- **FR-003**: System MUST [hardware interaction, e.g., "publish CMG tuning parameters to the ESP32"]
+- **FR-004**: System MUST [ML requirement, e.g., "route tremor data through backend/inference for classification"]
+- **FR-005**: System MUST [security requirement, e.g., "restrict patient data viewing to authorized Doctor roles"]
 
 *Example of marking unclear requirements:*
 
-- **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
+- **FR-006**: System MUST suppress tremors using [NEEDS CLARIFICATION: exact PID algorithm or counter-torque calculation not specified]
 
 ### Key Entities *(include if feature involves data)*
 
@@ -109,7 +109,6 @@
 
 ### Measurable Outcomes
 
-- **SC-001**: [Measurable metric, e.g., "Users can complete account creation in under 2 minutes"]
-- **SC-002**: [Measurable metric, e.g., "System handles 1000 concurrent users without degradation"]
-- **SC-003**: [User satisfaction metric, e.g., "90% of users successfully complete primary task on first attempt"]
-- **SC-004**: [Business metric, e.g., "Reduce support tickets related to [X] by 50%"]
+- **SC-001**: [Performance metric, e.g., "End-to-end telemetry latency from ESP32 to React dashboard is <100ms"]
+- **SC-002**: [Reliability metric, e.g., "System recovers from MQTT broker disconnection within 5 seconds"]
+- **SC-003**: [Accuracy metric, e.g., "ML Inference completes processing within 200ms per batch"]

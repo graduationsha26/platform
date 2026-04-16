@@ -1,287 +1,169 @@
 """
-Statistical Feature Extractors
+Feature Extractors — v2 Pipeline
 
-Functions for extracting statistical features from time-series windows for traditional ML models.
+Shared feature extraction for the ML pipeline.  Every consumer (training script,
+Django inference service, live MQTT test) imports from this single module to
+guarantee that the feature vector is always computed identically.
+
+Feature set (v2): 7 features × 6 axes = 42 features (axis-major order)
+  Per axis: mean, std, max, min, rms, median, dominant_freq
+  Axes order: aX, aY, aZ, gX, gY, gZ
+
+dominant_freq is the Hz value of the highest-power FFT bin in the Parkinson's
+tremor band [3 Hz, 12 Hz].  This naturally ignores the DC gravity component
+(0 Hz) and captures the clinically relevant oscillation frequency.
 """
 
 import numpy as np
-from scipy import stats
-from typing import Dict, List
+from typing import List
 
 
-def calculate_rms(window: np.ndarray) -> float:
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _calculate_rms(window: np.ndarray) -> float:
+    """Root Mean Square of a 1-D signal window."""
+    return float(np.sqrt(np.mean(window ** 2)))
+
+
+def _calculate_dominant_freq(
+    window: np.ndarray,
+    sampling_rate_hz: float,
+    low_hz: float = 3.0,
+    high_hz: float = 12.0,
+) -> float:
     """
-    Calculate Root Mean Square (RMS) of a signal window.
+    Dominant frequency (Hz) in the tremor band [low_hz, high_hz].
 
-    RMS measures the overall energy/intensity of the signal.
+    Uses np.fft.rfft on the raw signal (no DC removal needed — we simply
+    ignore the 0-Hz bin by setting low_hz >= 3.0).
 
-    Parameters:
-    -----------
-    window : numpy.ndarray
-        1D array of sensor values
-
-    Returns:
-    --------
-    rms : float
-        Root mean square value (always non-negative)
-
-    Formula:
-    --------
-    RMS = sqrt(mean(x^2))
-
-    Example:
-    --------
-    >>> window = np.array([1, 2, 3, 4, 5])
-    >>> rms = calculate_rms(window)
-    >>> print(f"{rms:.2f}")  # 3.32
+    Returns 0.0 when no FFT bins fall within the requested band (e.g., the
+    window is too short relative to the sampling rate).
     """
-    return np.sqrt(np.mean(window ** 2))
+    N = len(window)
+    fft_magnitude = np.abs(np.fft.rfft(window))
+    freqs = np.fft.rfftfreq(N, d=1.0 / sampling_rate_hz)
+
+    band_mask = (freqs >= low_hz) & (freqs <= high_hz)
+    band_freqs = freqs[band_mask]
+    band_magnitudes = fft_magnitude[band_mask]
+
+    if len(band_magnitudes) == 0:
+        return 0.0
+
+    return float(band_freqs[np.argmax(band_magnitudes)])
 
 
-def calculate_mean(window: np.ndarray) -> float:
-    """
-    Calculate mean (average) of a signal window.
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
-    Represents the central tendency or DC offset.
-
-    Parameters:
-    -----------
-    window : numpy.ndarray
-        1D array of sensor values
-
-    Returns:
-    --------
-    mean : float
-        Average value
-
-    Example:
-    --------
-    >>> window = np.array([1, 2, 3, 4, 5])
-    >>> mean = calculate_mean(window)
-    >>> print(mean)  # 3.0
-    """
-    return np.mean(window)
-
-
-def calculate_std(window: np.ndarray) -> float:
-    """
-    Calculate standard deviation of a signal window.
-
-    Measures signal variability/spread around the mean.
-
-    Parameters:
-    -----------
-    window : numpy.ndarray
-        1D array of sensor values
-
-    Returns:
-    --------
-    std : float
-        Standard deviation (always non-negative)
-
-    Example:
-    --------
-    >>> window = np.array([1, 2, 3, 4, 5])
-    >>> std = calculate_std(window)
-    >>> print(f"{std:.2f}")  # 1.41
-    """
-    return np.std(window)
-
-
-def calculate_skewness(window: np.ndarray) -> float:
-    """
-    Calculate skewness of a signal window.
-
-    Measures asymmetry of the distribution.
-
-    Parameters:
-    -----------
-    window : numpy.ndarray
-        1D array of sensor values
-
-    Returns:
-    --------
-    skewness : float
-        Skewness value
-        - skew = 0: symmetric distribution
-        - skew > 0: right tail (positive spikes)
-        - skew < 0: left tail (negative spikes)
-
-    Example:
-    --------
-    >>> window = np.array([1, 2, 3, 4, 5])
-    >>> skew = calculate_skewness(window)
-    >>> print(f"{skew:.2f}")  # ~0.00 (symmetric)
-    """
-    return stats.skew(window)
-
-
-def calculate_kurtosis(window: np.ndarray) -> float:
-    """
-    Calculate kurtosis of a signal window.
-
-    Measures tail heaviness (presence of outliers/spikes).
-
-    Parameters:
-    -----------
-    window : numpy.ndarray
-        1D array of sensor values
-
-    Returns:
-    --------
-    kurtosis : float
-        Excess kurtosis value
-        - kurt = 0: normal distribution
-        - kurt > 0: heavy tails (sharp peaks, outliers)
-        - kurt < 0: light tails (flat distribution)
-
-    Example:
-    --------
-    >>> window = np.array([1, 2, 3, 4, 5])
-    >>> kurt = calculate_kurtosis(window)
-    >>> print(f"{kurt:.2f}")  # ~-1.30 (uniform-like)
-    """
-    return stats.kurtosis(window)
-
-
-def extract_features_single_axis(window: np.ndarray) -> Dict[str, float]:
-    """
-    Extract all 5 statistical features for a single axis.
-
-    Parameters:
-    -----------
-    window : numpy.ndarray
-        1D array of sensor values for one axis
-
-    Returns:
-    --------
-    features : dict
-        Dictionary with keys: 'RMS', 'mean', 'std', 'skewness', 'kurtosis'
-
-    Example:
-    --------
-    >>> window_aX = np.random.randn(100)
-    >>> features = extract_features_single_axis(window_aX)
-    >>> print(features.keys())  # dict_keys(['RMS', 'mean', 'std', 'skewness', 'kurtosis'])
-    """
-    return {
-        'RMS': calculate_rms(window),
-        'mean': calculate_mean(window),
-        'std': calculate_std(window),
-        'skewness': calculate_skewness(window),
-        'kurtosis': calculate_kurtosis(window)
-    }
-
-
-def extract_features_all_axes(window: np.ndarray, axis_names: List[str]) -> Dict[str, float]:
-    """
-    Extract all features for all axes in a multi-dimensional window.
-
-    Parameters:
-    -----------
-    window : numpy.ndarray
-        2D array with shape (window_size, num_axes)
-    axis_names : list of str
-        Names of axes (e.g., ['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ'])
-
-    Returns:
-    --------
-    features : dict
-        Dictionary with keys like 'RMS_aX', 'mean_aX', 'std_aX', etc.
-        Total: num_axes × 5 features
-
-    Example:
-    --------
-    >>> window = np.random.randn(100, 6)  # 100 samples, 6 axes
-    >>> axis_names = ['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ']
-    >>> features = extract_features_all_axes(window, axis_names)
-    >>> print(len(features))  # 30 (6 axes × 5 features)
-    >>> print(list(features.keys())[:5])  # ['RMS_aX', 'mean_aX', 'std_aX', 'skewness_aX', 'kurtosis_aX']
-    """
-    if window.shape[1] != len(axis_names):
-        raise ValueError(f"Number of axes in window ({window.shape[1]}) doesn't match axis_names ({len(axis_names)})")
-
-    all_features = {}
-
-    for i, axis_name in enumerate(axis_names):
-        axis_window = window[:, i]
-        axis_features = extract_features_single_axis(axis_window)
-
-        # Add features with axis suffix
-        for feature_name, feature_value in axis_features.items():
-            feature_key = f"{feature_name}_{axis_name}"
-            all_features[feature_key] = feature_value
-
-    return all_features
-
-
-def extract_features_batch(
-    windows: np.ndarray,
-    axis_names: List[str]
-) -> np.ndarray:
-    """
-    Extract features for a batch of windows (vectorized).
-
-    Parameters:
-    -----------
-    windows : numpy.ndarray
-        3D array with shape (num_windows, window_size, num_axes)
-    axis_names : list of str
-        Names of axes (e.g., ['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ'])
-
-    Returns:
-    --------
-    feature_matrix : numpy.ndarray
-        2D array with shape (num_windows, num_features)
-        where num_features = num_axes × 5
-
-    Example:
-    --------
-    >>> windows = np.random.randn(10, 100, 6)  # 10 windows, 100 samples each, 6 axes
-    >>> axis_names = ['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ']
-    >>> feature_matrix = extract_features_batch(windows, axis_names)
-    >>> print(feature_matrix.shape)  # (10, 30) - 10 windows, 30 features
-    """
-    num_windows = windows.shape[0]
-    num_features = len(axis_names) * 5
-
-    feature_matrix = np.zeros((num_windows, num_features))
-
-    for i in range(num_windows):
-        features_dict = extract_features_all_axes(windows[i], axis_names)
-        # Convert dict to array (preserves insertion order in Python 3.7+)
-        feature_matrix[i] = list(features_dict.values())
-
-    return feature_matrix
+FEATURE_TYPES: List[str] = ['mean', 'std', 'max', 'min', 'rms', 'median', 'dominant_freq']
+TREMOR_BAND_LOW_HZ: float = 3.0
+TREMOR_BAND_HIGH_HZ: float = 12.0
 
 
 def get_feature_names(axis_names: List[str]) -> List[str]:
     """
-    Generate feature column names for a given set of axes.
+    Return the 42 feature column names in the exact order produced by
+    extract_window_features().
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     axis_names : list of str
-        Names of axes (e.g., ['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ'])
+        Axis labels in order, e.g. ['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ']
 
-    Returns:
-    --------
+    Returns
+    -------
     feature_names : list of str
-        List of feature names in order
-        (e.g., ['RMS_aX', 'mean_aX', ..., 'kurtosis_gZ'])
+        Length = len(axis_names) * 7
+        e.g. ['mean_aX', 'std_aX', 'max_aX', 'min_aX', 'rms_aX',
+               'median_aX', 'dominant_freq_aX', 'mean_aY', ...]
 
-    Example:
-    --------
-    >>> axis_names = ['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ']
-    >>> feature_names = get_feature_names(axis_names)
-    >>> print(len(feature_names))  # 30
-    >>> print(feature_names[:5])  # ['RMS_aX', 'mean_aX', 'std_aX', 'skewness_aX', 'kurtosis_aX']
+    Example
+    -------
+    >>> names = get_feature_names(['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ'])
+    >>> len(names)
+    42
+    >>> names[:7]
+    ['mean_aX', 'std_aX', 'max_aX', 'min_aX', 'rms_aX', 'median_aX', 'dominant_freq_aX']
     """
-    feature_types = ['RMS', 'mean', 'std', 'skewness', 'kurtosis']
-    feature_names = []
+    names: List[str] = []
+    for axis in axis_names:
+        for feat in FEATURE_TYPES:
+            names.append(f'{feat}_{axis}')
+    return names
 
-    for axis_name in axis_names:
-        for feature_type in feature_types:
-            feature_names.append(f"{feature_type}_{axis_name}")
 
-    return feature_names
+def extract_window_features(
+    window_2d: np.ndarray,
+    axis_names: List[str],
+    sampling_rate_hz: float,
+    low_hz: float = TREMOR_BAND_LOW_HZ,
+    high_hz: float = TREMOR_BAND_HIGH_HZ,
+) -> np.ndarray:
+    """
+    Extract 42 features from a single multi-axis sensor window.
+
+    Parameters
+    ----------
+    window_2d : np.ndarray, shape (window_size, num_axes)
+        Sensor data in physical units (m/s² for accel, °/s for gyro).
+        Must already be converted from raw ADC values before calling this.
+    axis_names : list of str
+        Names matching the column order of window_2d, e.g.
+        ['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ']
+    sampling_rate_hz : float
+        Sampling rate of the data (Hz).  Used for FFT frequency resolution.
+        Use ~250.0 for training Excel data, ~30.0 for live ESP32 stream.
+    low_hz : float
+        Lower bound of Parkinson's tremor frequency band (default: 3.0 Hz).
+    high_hz : float
+        Upper bound of Parkinson's tremor frequency band (default: 12.0 Hz).
+
+    Returns
+    -------
+    features : np.ndarray, shape (len(axis_names) * 7,)
+        Feature vector in axis-major order:
+        [mean_aX, std_aX, max_aX, min_aX, rms_aX, median_aX, dominant_freq_aX,
+         mean_aY, ..., dominant_freq_gZ]
+
+    Raises
+    ------
+    ValueError
+        If window_2d.shape[1] != len(axis_names).
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> win = np.random.randn(200, 6)
+    >>> feats = extract_window_features(win, ['aX','aY','aZ','gX','gY','gZ'], 250.0)
+    >>> feats.shape
+    (42,)
+    """
+    if window_2d.ndim != 2:
+        raise ValueError(
+            f'window_2d must be 2-D (window_size, num_axes), got shape {window_2d.shape}'
+        )
+    if window_2d.shape[1] != len(axis_names):
+        raise ValueError(
+            f'window_2d has {window_2d.shape[1]} columns but axis_names has '
+            f'{len(axis_names)} entries'
+        )
+
+    features: List[float] = []
+
+    for col_idx in range(len(axis_names)):
+        axis_data = window_2d[:, col_idx].astype(np.float64)
+
+        features.append(float(np.mean(axis_data)))
+        features.append(float(np.std(axis_data)))
+        features.append(float(np.max(axis_data)))
+        features.append(float(np.min(axis_data)))
+        features.append(_calculate_rms(axis_data))
+        features.append(float(np.median(axis_data)))
+        features.append(_calculate_dominant_freq(axis_data, sampling_rate_hz, low_hz, high_hz))
+
+    return np.array(features, dtype=np.float64)

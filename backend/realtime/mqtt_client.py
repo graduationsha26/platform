@@ -15,7 +15,7 @@ from typing import Optional
 import paho.mqtt.client as mqtt
 from django.conf import settings
 from django.utils import timezone
-from decouple import config
+
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
@@ -47,9 +47,9 @@ class MQTTClient:
 
     def __init__(self):
         """Initialize MQTT client with broker configuration."""
-        self.broker_url = config('MQTT_BROKER_URL', default='mqtt://localhost:1883')
-        self.username = config('MQTT_USERNAME', default='')
-        self.password = config('MQTT_PASSWORD', default='')
+        self.broker_url = settings.MQTT_BROKER_URL
+        self.username   = settings.MQTT_USERNAME
+        self.password   = settings.MQTT_PASSWORD
 
         # Parse broker URL
         self.broker_host, self.broker_port = self._parse_broker_url(self.broker_url)

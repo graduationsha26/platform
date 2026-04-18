@@ -1,10 +1,10 @@
 """
-Live Glove Inference Pipeline — v2 Sliding Window
+Live Glove Inference Pipeline — v3 Sliding Window
 
-Subscribes to ESP32 MQTT sensor stream, maintains a 200-sample rolling window,
+Subscribes to ESP32 MQTT sensor stream, maintains a 100-sample rolling window,
 extracts 42 features per window using the shared extract_window_features() pipeline
 (identical to training), scales with the saved StandardScaler, and classifies each
-window as TREMOR DETECTED (1) or NORMAL (0) using rf_model_v2.pkl.
+window as TREMOR (1) or NORMAL (0) using rf_model_v3.pkl with confidence scoring.
 
 After the initial ~6.7-second warm-up (200 samples @ 30Hz), a new prediction is
 produced with every incoming MQTT message — 30 predictions per second.
@@ -17,8 +17,8 @@ Usage:
     py backend/live_glove_test.py --broker 192.168.137.1 --port 1883
 
 Prerequisites:
-    - backend/ml_models/models/rf_model_v2.pkl    (run train_random_forest.py first)
-    - backend/ml_models/models/rf_model_v2_scaler.pkl
+    - backend/ml_models/models/rf_model_v3.pkl    (run train_random_forest.py first)
+    - backend/ml_models/models/rf_model_v3_scaler.pkl
     - MQTT broker running at specified address
     - ESP32 publishing JSON to tremo/sensors/+ at 30Hz
       Expected JSON: {"aX": ..., "aY": ..., "aZ": ..., "gX": ..., "gY": ..., "gZ": ...}
@@ -48,7 +48,7 @@ from ml_data.utils.feature_extractors import extract_window_features
 # Constants — must match the v2 training pipeline (5_aggregate_and_extract.py)
 # ---------------------------------------------------------------------------
 AXIS_NAMES    = ['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ']  # order must match training
-WINDOW_SIZE   = 200                                       # 200 samples per window (v2)
+WINDOW_SIZE   = 100                                       # 100 samples per window (v3)
 TREMOR_LOW_HZ = 3.0                                       # Parkinson's tremor band lower bound
 TREMOR_HIGH_HZ = 12.0                                     # Parkinson's tremor band upper bound
 
@@ -89,13 +89,13 @@ def parse_args():
     )
     parser.add_argument(
         '--model',
-        default=os.path.join(_models_dir, 'rf_model_v2.pkl'),
-        help='Path to RF model .pkl file (default: rf_model_v2.pkl)'
+        default=os.path.join(_models_dir, 'rf_model_v3.pkl'),
+        help='Path to RF model .pkl file (default: rf_model_v3.pkl)'
     )
     parser.add_argument(
         '--scaler',
-        default=os.path.join(_models_dir, 'rf_model_v2_scaler.pkl'),
-        help='Path to StandardScaler .pkl file (default: rf_model_v2_scaler.pkl)'
+        default=os.path.join(_models_dir, 'rf_model_v3_scaler.pkl'),
+        help='Path to StandardScaler .pkl file (default: rf_model_v3_scaler.pkl)'
     )
     parser.add_argument(
         '--sampling-rate',
@@ -134,12 +134,12 @@ def on_message(client, userdata, msg):
     Called by paho-mqtt for every incoming sensor message.
 
     Parses JSON payload, appends the 6-axis row to the sliding window
-    (deque auto-evicts oldest sample), then runs v2 inference once the
-    window is full (200 samples):
-      1. Convert deque → numpy array (200, 6)
+    (deque auto-evicts oldest sample), then runs v3 inference once the
+    window is full (100 samples):
+      1. Convert deque → numpy array (100, 6)
       2. Call extract_window_features() → 42-feature vector
       3. Apply StandardScaler.transform()
-      4. model.predict() → 0 or 1
+      4. model.predict_proba() → confidence-scored class
     """
     window  = userdata['window']
     model   = userdata['model']
@@ -189,15 +189,17 @@ def on_message(client, userdata, msg):
     # --- Step 6: Scale features using saved StandardScaler ---
     feature_scaled = scaler.transform(feature_vector.reshape(1, -1))  # (1, 42)
 
-    # --- Step 7: Classify with Random Forest model ---
-    pred = model.predict(feature_scaled)[0]
+    # --- Step 7: Classify with Random Forest model (probability-based) ---
+    probs = model.predict_proba(feature_scaled)[0]  # shape (2,): [P(NORMAL), P(TREMOR)]
+    pred = int(probs.argmax())
+    confidence = probs[pred] * 100
 
-    # --- Step 8: Print result with timestamp ---
+    # --- Step 8: Print result with timestamp and confidence score ---
     ts = datetime.now().strftime('%H:%M:%S.%f')[:12]
-    if pred == 1:
-        print(f'[{ts}] ⚠️  TREMOR DETECTED (1)')
+    if pred == 0:
+        print(f'[{ts}] ✅ NORMAL (0) | Confidence: {confidence:.1f}%')
     else:
-        print(f'[{ts}] ✅  NORMAL (0)')
+        print(f'[{ts}] ⚠️ TREMOR (1) | Confidence: {confidence:.1f}%')
 
 
 # ---------------------------------------------------------------------------

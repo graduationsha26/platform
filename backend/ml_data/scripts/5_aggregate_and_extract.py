@@ -10,7 +10,7 @@ For each file:
   2. Convert to physical units:
        Accelerometer: raw / 16384.0 * 9.81  → m/s²
        Gyroscope:     raw / 131.0            → °/s
-  3. Apply sliding window (window_size=200, stride=30)
+  3. Apply sliding window (window_size=100, stride=15)
   4. Extract 42 features per window via shared extract_window_features()
 
 Saves:
@@ -53,8 +53,8 @@ ACCEL_SENSITIVITY = 16384.0   # LSB/g  (±2g range)
 GYRO_SENSITIVITY  = 131.0     # LSB/(°/s)  (±250°/s range)
 GRAVITY_MS2       = 9.81      # m/s² per g
 
-WINDOW_SIZE = 200
-STRIDE      = 30
+WINDOW_SIZE = 100
+STRIDE      = 15
 SAMPLING_RATE_HZ = 250.0  # Approximate rate of the Data v2 Excel files
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')

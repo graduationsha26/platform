@@ -1,30 +1,35 @@
 /**
- * imu.cpp — MPU9250 IMU Driver Implementation
+ * imu.cpp — MPU6500 IMU Driver Implementation
  *
- * Feature: 025-imu-kalman-fusion
+ * Feature: 042-mpu6500-firmware-upgrade
  *
  * Implements:
- *   T009: imu_init()       — I2C init, WHO_AM_I check, register config
- *   T010: imu_configure()  — ODR, DLPF, gyro/accel range registers
- *   T011: calibrate_imu()  — 500-sample bias collection with motion guard
- *   T013: read_raw_sample() — 14-byte burst read, int16→float conversion
- *   T014: apply_calibration() — bias subtraction, dt computation
+ *   imu_init()        — SPI init, WHO_AM_I check, register config
+ *   imu_configure()   — ODR, DLPF, gyro/accel range registers
+ *   calibrate_imu()   — 500-sample bias collection with motion guard
+ *   read_raw_sample() — 14-byte SPI burst read, int16→float conversion
+ *   apply_calibration() — bias subtraction, dt computation
  */
 
 #include "imu.h"
 #include "config.h"
-#include <Wire.h>
+#include <SPI.h>
 #include <Arduino.h>
 #include <math.h>
+
+// ─── SPI bus instance (VSPI peripheral) ──────────────────────────────────────
+static SPIClass spi_bus(VSPI);
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 static void mpu_write(uint8_t reg, uint8_t value)
 {
-    Wire.beginTransmission(MPU9250_I2C_ADDR);
-    Wire.write(reg);
-    Wire.write(value);
-    Wire.endTransmission();
+    spi_bus.beginTransaction(SPISettings(MPU6500_SPI_FREQ, MSBFIRST, SPI_MODE3));
+    digitalWrite(MPU6500_SPI_CS, LOW);
+    spi_bus.transfer(reg & 0x7F);  // Write: MSB = 0
+    spi_bus.transfer(value);
+    digitalWrite(MPU6500_SPI_CS, HIGH);
+    spi_bus.endTransaction();
 #ifdef FIRMWARE_DEBUG
     Serial.printf("[IMU] Write reg=0x%02X val=0x%02X\n", reg, value);
 #endif
@@ -32,60 +37,61 @@ static void mpu_write(uint8_t reg, uint8_t value)
 
 static uint8_t mpu_read(uint8_t reg)
 {
-    Wire.beginTransmission(MPU9250_I2C_ADDR);
-    Wire.write(reg);
-    Wire.endTransmission(false);
-    Wire.requestFrom(MPU9250_I2C_ADDR, (uint8_t)1);
-    return Wire.available() ? Wire.read() : 0xFF;
+    spi_bus.beginTransaction(SPISettings(MPU6500_SPI_FREQ, MSBFIRST, SPI_MODE3));
+    digitalWrite(MPU6500_SPI_CS, LOW);
+    spi_bus.transfer(0x80 | reg);          // Read: MSB = 1
+    uint8_t val = spi_bus.transfer(0x00);  // Dummy write to clock in data
+    digitalWrite(MPU6500_SPI_CS, HIGH);
+    spi_bus.endTransaction();
+    return val;
 }
 
-// ─── T010: imu_configure() ───────────────────────────────────────────────────
+// ─── imu_configure() ─────────────────────────────────────────────────────────
 
 /**
- * Configure MPU9250 ODR, DLPF, and sensor ranges.
+ * Configure MPU6500 ODR, DLPF, and sensor ranges.
  * Called from imu_init() after clock source is established.
  *
  * Register map (from research.md):
  *   CONFIG      (0x1A) = 0x03  DLPF_CFG=3, gyro 41Hz BW, internal 1kHz
  *   SMPLRT_DIV  (0x19) = 0x09  ODR = 1000/(1+9) = 100Hz
- *   GYRO_CONFIG (0x1B) = 0x18  GFS_SEL=3 (±2000°/s), FCHOICE_B=00
+ *   GYRO_CONFIG (0x1B) = 0x00  GFS_SEL=0 (±250°/s), FCHOICE_B=00
  *   ACCEL_CONFIG(0x1C) = 0x00  AFS_SEL=0 (±2g)
  *   ACCEL_CFG2  (0x1D) = 0x03  accel DLPF 41Hz, 1kHz internal rate
- *
- * Magnetometer: USER_CTRL and INT_PIN_CFG are NOT written.
- * AK8963 stays isolated on internal aux I2C bus — zero latency impact.
  */
 static void imu_configure()
 {
     mpu_write(MPU_REG_CONFIG, 0x03);       // DLPF_CFG=3: 41Hz gyro BW, 1kHz internal
     mpu_write(MPU_REG_SMPLRT_DIV, 0x09);   // ODR = 1000/(1+9) = 100Hz
-    mpu_write(MPU_REG_GYRO_CONFIG, 0x18);  // GFS_SEL=3: ±2000°/s; FCHOICE_B=00
+    mpu_write(MPU_REG_GYRO_CONFIG, 0x00);  // GFS_SEL=0: ±250°/s; FCHOICE_B=00
     mpu_write(MPU_REG_ACCEL_CONFIG, 0x00); // AFS_SEL=0: ±2g
     mpu_write(MPU_REG_ACCEL_CFG2, 0x03);   // A_DLPFCFG=3: accel 41Hz BW
 }
 
-// ─── T009: imu_init() ────────────────────────────────────────────────────────
+// ─── imu_init() ──────────────────────────────────────────────────────────────
 
 bool imu_init()
 {
-    // Start I2C bus with configured pins and frequency
-    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN, I2C_FREQ_HZ);
+    // Deassert CS before starting the SPI bus to avoid a spurious transaction
+    pinMode(MPU6500_SPI_CS, OUTPUT);
+    digitalWrite(MPU6500_SPI_CS, HIGH);
+
+    // Start VSPI bus with configured pins
+    spi_bus.begin(MPU6500_SPI_SCK, MPU6500_SPI_MISO, MPU6500_SPI_MOSI, MPU6500_SPI_CS);
     delay(110); // Power-on stabilization (datasheet: 100ms max)
 
     // Software reset — clears all internal registers to default
     mpu_write(MPU_REG_PWR_MGMT_1, 0x80);
     delay(100); // Wait for reset to complete
 
-    // WHO_AM_I check — verify sensor is present and responding
-    // Accept both MPU-9250 (0x71) and MPU-6050 (0x68) — register map is identical for accel/gyro
+    // WHO_AM_I check — verify MPU6500 is present and responding
     uint8_t whoami = mpu_read(MPU_REG_WHO_AM_I);
-    if (whoami != MPU_WHO_AM_I_VAL && whoami != 0x68)
+    if (whoami != MPU_WHO_AM_I_VAL)
     {
-        Serial.printf("[IMU] ERROR: WHO_AM_I=0x%02X (expected 0x71 or 0x68). Check I2C wiring.\n", whoami);
+        Serial.printf("[IMU] ERROR: WHO_AM_I=0x%02X (expected 0x70 for MPU6500). Check SPI wiring.\n", whoami);
         return false;
     }
-    const char *chip = (whoami == 0x68) ? "MPU-6050" : "MPU-9250";
-    Serial.printf("[IMU] WHO_AM_I OK (0x%02X — %s detected)\n", whoami, chip);
+    Serial.printf("[IMU] WHO_AM_I OK (0x%02X — MPU6500 detected)\n", whoami);
 
     // Wake device; select PLL clock source (auto-selects best available)
     mpu_write(MPU_REG_PWR_MGMT_1, 0x01); // CLKSEL=1: PLL with gyro X reference
@@ -97,16 +103,13 @@ bool imu_init()
     // Configure ODR, DLPF, gyro/accel ranges
     imu_configure();
 
-    // Magnetometer confirmation:
-    // USER_CTRL (0x6A) and INT_PIN_CFG (0x37) are intentionally NOT written.
-    // AK8963 (I2C address 0x0C) stays isolated on the internal auxiliary bus.
-    // No I2C transactions will occur to 0x0C during normal operation.
-    Serial.println("[IMU] Magnetometer disabled (AK8963 isolated — zero latency impact)");
+    // MPU6500 is accel/gyro only — no magnetometer present
+    Serial.println("[IMU] MPU6500 initialized (SPI, ±2g accel, ±250dps gyro, 100Hz ODR)");
 
     return true;
 }
 
-// ─── T011: calibrate_imu() ───────────────────────────────────────────────────
+// ─── calibrate_imu() ─────────────────────────────────────────────────────────
 
 bool calibrate_imu(CalibrationOffsets *offsets)
 {
@@ -131,16 +134,17 @@ bool calibrate_imu(CalibrationOffsets *offsets)
 
     for (int i = 0; i < CALIB_N_SAMPLES; i++)
     {
-        // Burst-read 14 bytes directly (not via read_raw_sample to avoid recursion)
+        // SPI burst-read 14 bytes: send read address 0xBB (0x80 | 0x3B), then clock 14 bytes
         uint8_t buf[14];
-        Wire.beginTransmission(MPU9250_I2C_ADDR);
-        Wire.write(MPU_REG_ACCEL_XOUT_H);
-        Wire.endTransmission(false);
-        Wire.requestFrom(MPU9250_I2C_ADDR, (uint8_t)14);
-        for (int b = 0; b < 14 && Wire.available(); b++)
+        spi_bus.beginTransaction(SPISettings(MPU6500_SPI_FREQ, MSBFIRST, SPI_MODE3));
+        digitalWrite(MPU6500_SPI_CS, LOW);
+        spi_bus.transfer(0x80 | MPU_REG_ACCEL_XOUT_H); // 0xBB
+        for (int b = 0; b < 14; b++)
         {
-            buf[b] = Wire.read();
+            buf[b] = spi_bus.transfer(0x00);
         }
+        digitalWrite(MPU6500_SPI_CS, HIGH);
+        spi_bus.endTransaction();
 
         // Reconstruct int16_t (big-endian, high byte first)
         int16_t raw_ax = (int16_t)((buf[0] << 8) | buf[1]);
@@ -228,35 +232,24 @@ bool calibrate_imu(CalibrationOffsets *offsets)
     return true;
 }
 
-// ─── T013: read_raw_sample() ─────────────────────────────────────────────────
+// ─── read_raw_sample() ───────────────────────────────────────────────────────
 
 bool read_raw_sample(RawSample *out)
 {
     if (!out)
         return false;
 
-    // Burst-read 14 bytes: ACCEL_XOUT_H (0x3B) through GYRO_ZOUT_L (0x48)
-    Wire.beginTransmission(MPU9250_I2C_ADDR);
-    Wire.write(MPU_REG_ACCEL_XOUT_H);
-    uint8_t err = Wire.endTransmission(false);
-    if (err != 0)
-    {
-        Serial.printf("[IMU] I2C error on read (code %d)\n", err);
-        return false;
-    }
-
-    uint8_t received = Wire.requestFrom(MPU9250_I2C_ADDR, (uint8_t)14);
-    if (received < 14)
-    {
-        Serial.println("[IMU] I2C NACK — fewer than 14 bytes received");
-        return false;
-    }
-
+    // SPI burst-read 14 bytes: ACCEL_XOUT_H (0x3B) through GYRO_ZOUT_L (0x48)
     uint8_t buf[14];
+    spi_bus.beginTransaction(SPISettings(MPU6500_SPI_FREQ, MSBFIRST, SPI_MODE3));
+    digitalWrite(MPU6500_SPI_CS, LOW);
+    spi_bus.transfer(0x80 | MPU_REG_ACCEL_XOUT_H); // 0xBB — read bit set
     for (int i = 0; i < 14; i++)
     {
-        buf[i] = Wire.read();
+        buf[i] = spi_bus.transfer(0x00);
     }
+    digitalWrite(MPU6500_SPI_CS, HIGH);
+    spi_bus.endTransaction();
 
     // Reconstruct signed 16-bit integers (big-endian)
     int16_t raw_ax = (int16_t)((buf[0] << 8) | buf[1]);
@@ -279,7 +272,7 @@ bool read_raw_sample(RawSample *out)
     return true;
 }
 
-// ─── T014: apply_calibration() ───────────────────────────────────────────────
+// ─── apply_calibration() ─────────────────────────────────────────────────────
 
 void apply_calibration(const RawSample *raw,
                        const CalibrationOffsets *offsets,

@@ -4,15 +4,16 @@
  * Feature: 025-imu-kalman-fusion
  * Feature: 030-esp32-mqtt (battery_level, MQTT publish pipeline)
  * Feature: 031-freertos-scheduler (FreeRTOS task scheduler, PID tremor control, CMG actuation)
+ * Feature: 042-mpu6500-firmware-upgrade (MPU6500 SPI sensor, GPIO13/14 actuator pin reassignment)
  *
- * Pipeline: MPU9250 init → calibration → battery init → CMG init → FreeRTOS task scheduler
+ * Pipeline: MPU6500 init → calibration → battery init → CMG init → FreeRTOS task scheduler
  *   SensorTask  (Core 1, 100Hz): IMU read → Kalman fusion → sensor mailbox
  *   ControlTask (Core 1, 200Hz): mailbox → PID → CMG actuation (target: <70ms latency)
  *   MqttTask    (Core 0,  30Hz): mailbox → battery → MQTT JSON publish
  *
  * Boot sequence:
  *   1. Serial init
- *   2. IMU init (I2C, WHO_AM_I, register config, magnetometer disabled)
+ *   2. IMU init (SPI, WHO_AM_I, register config — no magnetometer)
  *   3. Startup calibration (500 samples, bias computation)
  *   4. Battery ADC init
  *   5. CMG init (gimbal servo + flywheel ESC arming, ~2s)
@@ -90,7 +91,7 @@ void setup() {
     // --- CMG init (gimbal servo + flywheel ESC arming) ---
     // Note: cmg_init() includes a 2-second ESC arming delay — this is normal.
     cmg_init();
-    Serial.println("[BOOT] CMG initialized (GPIO18 gimbal, GPIO19 flywheel, 50Hz 16-bit).");
+    Serial.println("[BOOT] CMG initialized (GPIO14 gimbal, GPIO13 flywheel, 50Hz 16-bit).");
 
     // --- Start FreeRTOS task scheduler ---
     // Creates sensor mailbox, seeds Kalman filters from g_offsets, creates all 3 tasks.

@@ -182,7 +182,7 @@ class ModelLoader:
 
     def _get_model_path(self, model_name: str) -> str:
         model_map = {
-            'rf':     settings.ML_MODELS_DIR / 'rf_model_v2.pkl',
+            'rf':     settings.ML_MODELS_DIR / 'rf_model_v3.pkl',
             'svm':    settings.ML_MODELS_DIR / 'svm_model.pkl',
             'lstm':   settings.DL_MODELS_DIR / 'lstm_model.h5',
             'cnn_1d': settings.DL_MODELS_DIR / 'cnn_1d_model.h5',
@@ -198,7 +198,7 @@ class ModelLoader:
 
     def _get_metadata_path(self, model_name: str) -> str:
         metadata_map = {
-            'rf':     settings.ML_MODELS_DIR / 'rf_model_v2.json',
+            'rf':     settings.ML_MODELS_DIR / 'rf_model_v3.json',
             'svm':    settings.ML_MODELS_DIR / 'svm_model.json',
             'lstm':   settings.DL_MODELS_DIR / 'lstm_model.json',
             'cnn_1d': settings.DL_MODELS_DIR / 'cnn_1d_model.json',

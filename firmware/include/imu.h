@@ -1,28 +1,28 @@
 /**
- * imu.h — MPU9250 IMU Driver: Data Structures and API
+ * imu.h — MPU6500 IMU Driver: Data Structures and API
  *
- * Feature: 025-imu-kalman-fusion
+ * Feature: 042-mpu6500-firmware-upgrade
  *
  * Covers:
  *   - RawSample: uncorrected 6-axis reading in physical units
  *   - CalibrationOffsets: bias correction computed at startup
  *   - CalibratedSample: bias-corrected sample with timing delta
- *   - imu_init(): I2C init, WHO_AM_I check, register configuration (mag disabled)
+ *   - imu_init(): SPI init, WHO_AM_I check, register configuration (no magnetometer)
  *   - calibrate_imu(): 500-sample startup calibration
- *   - read_raw_sample(): single 6-axis burst read
+ *   - read_raw_sample(): single 6-axis SPI burst read
  *   - apply_calibration(): subtract biases, compute dt
  *
- * MPU9250 register config (research.md):
+ * MPU6500 register config (research.md):
  *   CONFIG      (0x1A) = 0x03  DLPF 41Hz, internal rate 1kHz
  *   SMPLRT_DIV  (0x19) = 0x09  ODR = 1000/(1+9) = 100Hz
- *   GYRO_CONFIG (0x1B) = 0x18  ±2000°/s, FCHOICE_B=00
+ *   GYRO_CONFIG (0x1B) = 0x00  ±250°/s, FCHOICE_B=00
  *   ACCEL_CONFIG(0x1C) = 0x00  ±2g
  *   ACCEL_CONFIG2(0x1D)= 0x03  accel DLPF 41Hz
- *   Magnetometer: NOT initialized — AK8963 stays isolated
+ *   No magnetometer — MPU6500 is accel/gyro only
  *
  * Unit conventions:
  *   Accelerometer: m/s²  (raw / 16384.0 * 9.80665)
- *   Gyroscope:     °/s   (raw / 16.384)
+ *   Gyroscope:     °/s   (raw / 131.0)
  */
 
 #pragma once
@@ -30,10 +30,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// ─── MPU9250 I2C Address ──────────────────────────────────────────────────────
-#define MPU9250_I2C_ADDR    0x68   // AD0 = GND (default)
-
-// ─── MPU9250 Register Addresses ──────────────────────────────────────────────
+// ─── MPU6500 Register Addresses ──────────────────────────────────────────────
 #define MPU_REG_SMPLRT_DIV   0x19
 #define MPU_REG_CONFIG       0x1A
 #define MPU_REG_GYRO_CONFIG  0x1B
@@ -44,12 +41,12 @@
 #define MPU_REG_PWR_MGMT_2   0x6C
 #define MPU_REG_WHO_AM_I     0x75
 
-#define MPU_WHO_AM_I_VAL     0x71  // Expected value for genuine MPU9250
+#define MPU_WHO_AM_I_VAL     0x70  // Expected value for MPU6500
 
 // ─── Conversion Constants ─────────────────────────────────────────────────────
 #define ACCEL_LSB_PER_G      16384.0f   // AFS_SEL=0, ±2g
 #define GRAVITY_MS2          9.80665f
-#define GYRO_LSB_PER_DPS     16.384f    // GFS_SEL=3, ±2000°/s
+#define GYRO_LSB_PER_DPS     131.0f     // GFS_SEL=0, ±250°/s
 
 // ─── Data Structures ──────────────────────────────────────────────────────────
 
@@ -58,8 +55,8 @@
  * Produced by read_raw_sample(). Not yet bias-corrected.
  *
  *   aX, aY, aZ: accelerometer axes in m/s² (range ±19.6 m/s²)
- *   gX, gY, gZ: gyroscope axes in °/s       (range ±2000 °/s)
- *   timestamp_ms: MCU millis() at moment of I2C burst read
+ *   gX, gY, gZ: gyroscope axes in °/s       (range ±250 °/s)
+ *   timestamp_ms: MCU millis() at moment of SPI burst read
  */
 typedef struct {
     float    aX, aY, aZ;      // m/s²
@@ -97,19 +94,19 @@ typedef struct {
 // ─── API ─────────────────────────────────────────────────────────────────────
 
 /**
- * imu_init() — Initialize I2C, configure MPU9250, disable magnetometer.
+ * imu_init() — Initialize SPI bus, configure MPU6500.
  *
  * Performs:
- *   1. Wire.begin(SDA, SCL) at I2C_FREQ_HZ
+ *   1. pinMode(CS, OUTPUT); digitalWrite(CS, HIGH); spi_bus.begin(SCK,MISO,MOSI,CS)
  *   2. 110ms power-on delay
  *   3. Software reset (PWR_MGMT_1 = 0x80), 100ms delay
- *   4. WHO_AM_I check — returns false if not 0x71
+ *   4. WHO_AM_I check — returns false if not 0x70 (MPU6500)
  *   5. PLL clock source (PWR_MGMT_1 = 0x01), 200ms delay
  *   6. All axes enabled (PWR_MGMT_2 = 0x00)
  *   7. imu_configure(): ODR, DLPF, gyro/accel ranges
- *   NOTE: USER_CTRL and INT_PIN_CFG are NOT written — AK8963 stays isolated.
+ *   NOTE: MPU6500 has no magnetometer — no AK8963 isolation needed.
  *
- * Returns: true on success, false on WHO_AM_I mismatch or I2C error
+ * Returns: true on success, false on WHO_AM_I mismatch or SPI error
  */
 bool imu_init();
 
@@ -128,17 +125,17 @@ bool imu_init();
 bool calibrate_imu(CalibrationOffsets* offsets);
 
 /**
- * read_raw_sample() — Burst-read 14 bytes from MPU9250, convert to float.
+ * read_raw_sample() — SPI burst-read 14 bytes from MPU6500, convert to float.
  *
  * Reads registers 0x3B–0x48 (accel XYZ + temp + gyro XYZ).
  * Temperature bytes are read but discarded.
  *
  * Conversion:
  *   accel: (int16_t / 16384.0f) * 9.80665f  → m/s²
- *   gyro:  int16_t / 16.384f                → °/s
+ *   gyro:  int16_t / 131.0f                 → °/s
  *
  * @param out  Output: populated RawSample struct
- * Returns: true on success, false on I2C NACK
+ * Returns: true on success, false on SPI error
  */
 bool read_raw_sample(RawSample* out);
 

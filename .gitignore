@@ -51,31 +51,31 @@ build/
 .DS_Store
 Thumbs.db
 
-# AI/ML Models
-backend/models/*.pkl
-backend/models/*.h5
-backend/models/*.pb
+# AI/ML Models — [043] Unignored: .pkl and .h5 tracked for model sharing & deployment
+# backend/models/*.pkl
+# backend/models/*.h5
+# backend/models/*.pb
 
-# ML/DL Model Training (Feature 005)
-backend/ml_models/models/*.pkl
-backend/ml_models/models/*.json
+# ML/DL Model Training (Feature 005) — [043] Unignored: v3 models, scalers, JSON metadata tracked
+# backend/ml_models/models/*.pkl
+# backend/ml_models/models/*.json
 !backend/ml_models/models/.gitkeep
 
-# Raw Feature Pipeline Models (Feature 011)
-backend/ml_models/*.pkl
-backend/ml_models/backup/*.pkl
+# Raw Feature Pipeline Models (Feature 011) — [043] Unignored: .pkl artifacts tracked
+# backend/ml_models/*.pkl
+# backend/ml_models/backup/*.pkl
 backend/ml_data/params.json.backup
 
-# Deep Learning Models Training (Feature 006)
-backend/dl_models/models/*.h5
-backend/dl_models/models/*.keras
-backend/dl_models/models/*.json
+# Deep Learning Models Training (Feature 006) — [043] Unignored: .h5 artifacts tracked
+# backend/dl_models/models/*.h5
+# backend/dl_models/models/*.keras
+# backend/dl_models/models/*.json
 backend/dl_models/models/*.txt
 !backend/dl_models/models/.gitkeep
 
-# Raw Feature Pipeline DL Models (Feature 011)
-backend/dl_models/*.h5
-backend/dl_models/backup/*.h5
+# Raw Feature Pipeline DL Models (Feature 011) — [043] Unignored: .h5 artifacts tracked
+# backend/dl_models/*.h5
+# backend/dl_models/backup/*.h5
 
 # Model Comparison & Deployment Selection (Feature 007)
 backend/model_comparison/reports/*.md

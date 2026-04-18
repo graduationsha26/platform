@@ -1,0 +1,77 @@
+{
+  "model_type": "SVC",
+  "hyperparameters": {
+    "C": 10,
+    "gamma": 0.1,
+    "kernel": "rbf",
+    "random_state": 42
+  },
+  "performance_metrics": {
+    "accuracy": 0.7806873977086743,
+    "precision": 0.7808266899993519,
+    "recall": 0.7791800902061856,
+    "f1_score": 0.779646191566839,
+    "confusion_matrix": [
+      [
+        435,
+        147
+      ],
+      [
+        121,
+        519
+      ]
+    ],
+    "meets_threshold": false
+  },
+  "cross_validation": {
+    "cv_scores": [
+      0.7627811860940695,
+      0.7249488752556237,
+      0.7044989775051125,
+      0.7597137014314929,
+      0.7300613496932515
+    ],
+    "cv_mean": 0.778643566864049,
+    "cv_std": 0.02203850100466437
+  },
+  "training_info": {
+    "timestamp": "2026-04-13T17:49:24.826129",
+    "training_time_seconds": 21.422707319259644,
+    "training_samples": 4888,
+    "test_samples": 1222,
+    "feature_count": 42,
+    "dataset_source": "ready_for_training_features.csv",
+    "random_state": 42,
+    "scaled": true,
+    "sklearn_version": "1.8.0",
+    "python_version": "3.14.2"
+  },
+  "filter_params": {
+    "type": "butterworth",
+    "subtype": "highpass",
+    "order": 2,
+    "cutoff_hz": 0.5,
+    "sampling_rate_hz": 37.0,
+    "sos_coefficients": [
+      [
+        0.9417263847983491,
+        -1.8834527695966983,
+        0.9417263847983491,
+        1.0,
+        -1.8800540675741695,
+        0.8868514716192285
+      ]
+    ],
+    "applied_to_axes": [
+      "aX",
+      "aY",
+      "aZ"
+    ],
+    "skipped_axes": [
+      "gX",
+      "gY",
+      "gZ"
+    ],
+    "initial_conditions": "sosfilt_zi_scaled"
+  }
+}

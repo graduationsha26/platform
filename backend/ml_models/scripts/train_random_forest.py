@@ -1,15 +1,15 @@
 """
-Random Forest Classifier Training Script — v2 Pipeline
+Random Forest Classifier Training Script — v3 Pipeline
 
 Trains a Random Forest classifier for Parkinson's tremor detection using
 GridSearchCV for hyperparameter tuning. Loads pre-extracted feature matrices
 (X_features.npy, y_labels.npy) produced by 5_aggregate_and_extract.py.
 
-Saves v2 artifacts:
-  backend/ml_models/models/rf_model_v2.pkl        — trained RandomForestClassifier
-  backend/ml_models/models/rf_model_v2_scaler.pkl — fitted StandardScaler
-  backend/ml_models/models/rf_model_v2.json        — metadata (feature order, pipeline params)
-  backend/ml_models/rf_model_metrics_v2.json       — detailed metrics
+Saves v3 artifacts:
+  backend/ml_models/models/rf_model_v3.pkl        — trained RandomForestClassifier
+  backend/ml_models/models/rf_model_v3_scaler.pkl — fitted StandardScaler
+  backend/ml_models/models/rf_model_v3.json        — metadata (feature order, pipeline params)
+  backend/ml_models/rf_model_metrics_v3.json       — detailed metrics
 
 Usage:
     py backend/ml_models/scripts/train_random_forest.py
@@ -42,7 +42,7 @@ logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
 AXIS_NAMES = ['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ']
-MODEL_VERSION = 2
+MODEL_VERSION = 3
 
 
 def parse_arguments():
@@ -203,8 +203,8 @@ def main():
         'version': MODEL_VERSION,
         'feature_names': feature_names,
         'pipeline_params': {
-            'window_size': 200,
-            'stride': 30,
+            'window_size': 100,
+            'stride': 15,
             'mpu6050_accel_sensitivity': 16384.0,
             'mpu6050_gyro_sensitivity': 131.0,
             'accel_to_ms2': True,

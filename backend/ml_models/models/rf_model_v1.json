@@ -1,0 +1,74 @@
+{
+  "model_type": "RandomForestClassifier",
+  "hyperparameters": {
+    "max_depth": 30,
+    "n_estimators": 300
+  },
+  "performance_metrics": {
+    "accuracy": 0.94189852700491,
+    "precision": 0.9422402823623093,
+    "recall": 0.9413391323024055,
+    "f1_score": 0.9417126910366853,
+    "confusion_matrix": [
+      [
+        541,
+        41
+      ],
+      [
+        30,
+        610
+      ]
+    ],
+    "meets_threshold": false
+  },
+  "cross_validation": {
+    "cv_scores": [
+      0.941717791411043,
+      0.9366053169734151,
+      0.943762781186094,
+      0.941717791411043,
+      0.941717791411043
+    ],
+    "cv_mean": 0.9468097531569659,
+    "cv_std": 0.00238484740075473
+  },
+  "training_info": {
+    "timestamp": "2026-04-13T17:48:38.467892",
+    "training_time_seconds": 28.8119900226593,
+    "training_samples": 4888,
+    "test_samples": 1222,
+    "feature_count": 42,
+    "dataset_source": "ready_for_training_features.csv",
+    "random_state": 42,
+    "sklearn_version": "1.8.0",
+    "python_version": "3.14.2"
+  },
+  "filter_params": {
+    "type": "butterworth",
+    "subtype": "highpass",
+    "order": 2,
+    "cutoff_hz": 0.5,
+    "sampling_rate_hz": 37.0,
+    "sos_coefficients": [
+      [
+        0.9417263847983491,
+        -1.8834527695966983,
+        0.9417263847983491,
+        1.0,
+        -1.8800540675741695,
+        0.8868514716192285
+      ]
+    ],
+    "applied_to_axes": [
+      "aX",
+      "aY",
+      "aZ"
+    ],
+    "skipped_axes": [
+      "gX",
+      "gY",
+      "gZ"
+    ],
+    "initial_conditions": "sosfilt_zi_scaled"
+  }
+}

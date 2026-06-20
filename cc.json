@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "author": "TremoAI System",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-mpu6050",
+      "id": "imu",
+      "top": 120,
+      "left": -200,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "servo_gimbal",
+      "top": -150,
+      "left": 200,
+      "attrs": { "color": "orange" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "esc_flywheel",
+      "top": 100,
+      "left": 200,
+      "attrs": { "color": "black" }
+    }
+  ],
+  "connections": [
+    [ "esp:3V3", "imu:VCC", "red", [ "v0" ] ],
+    [ "esp:GND.1", "imu:GND", "black", [ "v0" ] ],
+    [ "esp:21", "imu:SDA", "blue", [ "v0" ] ],
+    [ "esp:22", "imu:SCL", "green", [ "v0" ] ],
+    [ "esp:5V", "servo_gimbal:V+", "red", [ "v0", "h40", "v-150" ] ],
+    [ "esp:GND.2", "servo_gimbal:GND", "black", [ "v0" ] ],
+    [ "esp:18", "servo_gimbal:PWM", "orange", [ "v0" ] ],
+    [ "esp:5V", "esc_flywheel:V+", "red", [ "v0", "h40", "v100" ] ],
+    [ "esp:GND.3", "esc_flywheel:GND", "black", [ "v0" ] ],
+    [ "esp:19", "esc_flywheel:PWM", "white", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}

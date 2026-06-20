@@ -1,0 +1,74 @@
+openapi: 3.0.3
+info:
+  title: TremoAI Analytics — Critical Alerts
+  version: "1.0"
+  description: >
+    Returns the count of patients whose tremor readings have been classified
+    as severe on each of the 5 consecutive calendar days ending today.
+
+paths:
+  /api/analytics/critical-alerts/:
+    get:
+      summary: Count patients with 5 consecutive days of severe tremors
+      operationId: getCriticalAlerts
+      tags:
+        - Analytics
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Count returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CriticalAlertsResponse"
+              example:
+                count: 3
+        "401":
+          description: Authentication required — missing or invalid JWT token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "Authentication credentials were not provided."
+        "403":
+          description: Doctor role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "Only doctors can access critical alerts."
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    CriticalAlertsResponse:
+      type: object
+      required:
+        - count
+      properties:
+        count:
+          type: integer
+          minimum: 0
+          description: >
+            Number of patients (scoped to the authenticated doctor's cohort) who have
+            had at least one severe-classified tremor session on each of the 5
+            consecutive calendar days ending today. Returns 0 if no patients qualify
+            or the doctor has no assigned patients.
+          example: 3
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message

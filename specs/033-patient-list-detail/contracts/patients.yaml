@@ -1,0 +1,354 @@
+openapi: "3.0.3"
+info:
+  title: TremoAI — Patient Management API
+  version: "1.0.0"
+  description: >
+    Existing PatientViewSet endpoints consumed by the Patient List & Detail Pages feature.
+    PatientListSerializer is extended with last_session_date.
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+
+paths:
+  /patients/:
+    get:
+      operationId: listPatients
+      summary: List patients assigned to the authenticated doctor
+      tags: [Patients]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: query
+          description: Case-insensitive substring filter on full_name
+          schema: { type: string }
+        - name: page
+          in: query
+          description: Page number (default 1)
+          schema: { type: integer, default: 1 }
+        - name: page_size
+          in: query
+          description: Items per page (default 20, max 100)
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        "200":
+          description: Paginated patient list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    post:
+      operationId: createPatient
+      summary: Create a new patient (doctor only)
+      tags: [Patients]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatientWriteRequest"
+      responses:
+        "201":
+          description: Patient created; doctor automatically assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientDetail"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /patients/{id}/:
+    get:
+      operationId: retrievePatient
+      summary: Get full patient profile
+      tags: [Patients]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Full patient detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    patch:
+      operationId: updatePatient
+      summary: Partially update a patient's profile
+      tags: [Patients]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatientWriteRequest"
+      responses:
+        "200":
+          description: Updated patient profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientDetail"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /biometric-sessions/:
+    get:
+      operationId: listSessions
+      summary: List biometric sessions for a patient (session history)
+      tags: [Sessions]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: patient
+          in: query
+          required: true
+          description: Patient ID to filter sessions for
+          schema: { type: integer }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, default: 10, maximum: 100 }
+      responses:
+        "200":
+          description: Paginated session history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    PatientListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        full_name:
+          type: string
+        date_of_birth:
+          type: string
+          format: date
+        contact_email:
+          type: string
+          format: email
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        last_session_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: session_start of the most recent BiometricSession; null if none
+
+    PatientListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        previous:
+          type: string
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/PatientListItem"
+
+    PatientDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        full_name:
+          type: string
+        date_of_birth:
+          type: string
+          format: date
+        contact_phone:
+          type: string
+          nullable: true
+        contact_email:
+          type: string
+          nullable: true
+        medical_notes:
+          type: string
+          nullable: true
+        created_by:
+          type: object
+          properties:
+            id: { type: integer }
+            email: { type: string }
+            first_name: { type: string }
+            last_name: { type: string }
+        assigned_doctors:
+          type: array
+          items:
+            type: object
+        paired_device:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer }
+            serial_number: { type: string }
+            status: { type: string, enum: [online, offline] }
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PatientWriteRequest:
+      type: object
+      required:
+        - full_name
+        - date_of_birth
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+        date_of_birth:
+          type: string
+          format: date
+          description: Must not be in the future
+        contact_phone:
+          type: string
+          nullable: true
+        contact_email:
+          type: string
+          format: email
+          nullable: true
+        medical_notes:
+          type: string
+          nullable: true
+
+    SessionListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        patient:
+          type: object
+          properties:
+            id: { type: integer }
+            full_name: { type: string }
+        device:
+          type: object
+          properties:
+            id: { type: integer }
+            serial_number: { type: string }
+            status: { type: string, enum: [online, offline] }
+        session_start:
+          type: string
+          format: date-time
+        session_duration:
+          type: string
+          description: Duration in HH:MM:SS format
+        created_at:
+          type: string
+          format: date-time
+        ml_prediction_severity:
+          type: string
+          enum: [mild, moderate, severe]
+          nullable: true
+          description: Extracted from ml_prediction JSON; null if no prediction
+
+    SessionListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        previous:
+          type: string
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionListItem"
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Access denied — doctor role required or patient not assigned
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Patient not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ValidationError:
+      description: Request body validation failed
+      content:
+        application/json:
+          schema:
+            type: object

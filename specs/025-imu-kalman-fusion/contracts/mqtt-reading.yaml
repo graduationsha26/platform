@@ -1,0 +1,190 @@
+asyncapi: "2.6.0"
+info:
+  title: TremoAI Glove MQTT Reading Contract
+  version: "1.0.0"
+  description: |
+    MQTT message contract for raw 6-axis IMU sensor readings published
+    by the TremoAI smart glove firmware to the TremoAI backend.
+
+    This contract matches the backend validator in:
+      backend/realtime/validators.py (validate_biometric_reading_message)
+      backend/realtime/mqtt_client.py (_handle_reading_message)
+
+    The magnetometer axes (mX, mY, mZ) are NEVER included in this payload —
+    the MPU9250 magnetometer is disabled in firmware. Any legacy fields
+    (flex_1 through flex_5) are silently ignored by the backend.
+
+servers:
+  local_broker:
+    url: "mqtt://localhost:1883"
+    protocol: mqtt
+    description: Local Mosquitto MQTT broker (development)
+    security:
+      - userPassword: []
+
+channels:
+  "devices/{serial_number}/reading":
+    description: |
+      Per-device channel for streaming individual 6-axis IMU sensor readings
+      at 100Hz. The {serial_number} wildcard is replaced by the device's
+      unique uppercase alphanumeric identifier (8–20 characters).
+    parameters:
+      serial_number:
+        description: Device serial number (8–20 uppercase alphanumeric characters)
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 20
+          pattern: "^[A-Z0-9]+$"
+    publish:
+      summary: Glove firmware publishes one IMU reading every ~10ms (100Hz)
+      operationId: publishImuReading
+      message:
+        $ref: "#/components/messages/ImuReading"
+
+components:
+  messages:
+    ImuReading:
+      name: ImuReading
+      title: 6-Axis IMU Sensor Reading
+      summary: One Kalman-filtered, calibration-corrected IMU sample
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/ImuReadingPayload"
+      examples:
+        - name: typical_reading
+          summary: Normal tremor-affected reading sample
+          payload:
+            serial_number: "GLOVE001A"
+            timestamp: "2026-02-18T10:30:00.123Z"
+            aX: 0.42
+            aY: -0.15
+            aZ: 9.75
+            gX: 12.3
+            gY: -5.6
+            gZ: 0.8
+        - name: high_tremor_reading
+          summary: Reading during active tremor episode
+          payload:
+            serial_number: "GLOVE001A"
+            timestamp: "2026-02-18T10:30:01.234Z"
+            aX: 3.21
+            aY: -2.87
+            aZ: 8.95
+            gX: 145.7
+            gY: -98.3
+            gZ: 22.1
+
+  schemas:
+    ImuReadingPayload:
+      type: object
+      required:
+        - serial_number
+        - timestamp
+        - aX
+        - aY
+        - aZ
+        - gX
+        - gY
+        - gZ
+      additionalProperties: true
+      description: |
+        6-axis IMU sensor reading payload. Additional fields in the payload
+        (e.g., roll, pitch) are accepted but ignored by the backend.
+        Fields mX, mY, mZ (magnetometer) MUST NOT be present — the magnetometer
+        is disabled in firmware and the backend never reads these fields.
+      properties:
+        serial_number:
+          type: string
+          description: |
+            Unique device identifier. Must match the {serial_number} in the MQTT topic.
+            Must be 8–20 uppercase alphanumeric characters.
+          minLength: 8
+          maxLength: 20
+          pattern: "^[A-Z0-9]+$"
+          example: "GLOVE001A"
+        timestamp:
+          type: string
+          format: date-time
+          description: |
+            ISO 8601 UTC timestamp of when this sample was captured by the firmware.
+            Should be sourced from NTP-synced RTC for accurate time alignment.
+          example: "2026-02-18T10:30:00.123Z"
+        aX:
+          type: number
+          format: float
+          description: |
+            Accelerometer X-axis reading. Calibration bias-corrected.
+            Positive X = forward (glove dorsal surface facing up when flat).
+            Physical range: ±19.6 m/s² (±2g). Backend warns above ±20 m/s².
+          minimum: -20.0
+          maximum: 20.0
+          example: 0.42
+        aY:
+          type: number
+          format: float
+          description: |
+            Accelerometer Y-axis reading. Calibration bias-corrected.
+            Physical range: ±19.6 m/s² (±2g). Backend warns above ±20 m/s².
+          minimum: -20.0
+          maximum: 20.0
+          example: -0.15
+        aZ:
+          type: number
+          format: float
+          description: |
+            Accelerometer Z-axis reading. Calibration bias-corrected.
+            At rest (flat, Z-axis up), reads approximately 0 m/s² after gravity compensation.
+            Physical range: ±19.6 m/s² (±2g). Backend warns above ±20 m/s².
+          minimum: -20.0
+          maximum: 20.0
+          example: 9.75
+        gX:
+          type: number
+          format: float
+          description: |
+            Gyroscope X-axis angular rate. Calibration bias-corrected.
+            At rest, reads approximately 0 °/s.
+            Physical range: ±2000 °/s (FS_SEL=3). Backend warns outside this range.
+          minimum: -2000.0
+          maximum: 2000.0
+          example: 12.3
+        gY:
+          type: number
+          format: float
+          description: |
+            Gyroscope Y-axis angular rate. Calibration bias-corrected.
+            Physical range: ±2000 °/s (FS_SEL=3).
+          minimum: -2000.0
+          maximum: 2000.0
+          example: -5.6
+        gZ:
+          type: number
+          format: float
+          description: |
+            Gyroscope Z-axis angular rate. Calibration bias-corrected.
+            Physical range: ±2000 °/s (FS_SEL=3).
+          minimum: -2000.0
+          maximum: 2000.0
+          example: 0.8
+
+  securitySchemes:
+    userPassword:
+      type: userPassword
+      description: |
+        MQTT broker username and password.
+        Set via MQTT_USERNAME and MQTT_PASSWORD environment variables
+        (backend .env) and device config.h (firmware).
+
+# ─── Backend Validator Compliance Notes ────────────────────────────────────────
+# This payload schema is derived from backend/realtime/validators.py:
+#   validate_biometric_reading_message()
+#
+# Compliance requirements:
+#   ✅ serial_number: string, 8-20 chars, uppercase alphanumeric
+#   ✅ timestamp: valid ISO 8601 string
+#   ✅ aX, aY, aZ, gX, gY, gZ: numeric (int or float)
+#   ✅ Out-of-range values: logged as WARNING, NOT rejected (backend is lenient)
+#   ✅ Extra fields: silently ignored (additionalProperties: true)
+#   ✅ mX, mY, mZ: NOT present (magnetometer disabled; backend never reads them)
+#   ✅ flex_1..flex_5: NOT present (flex sensors removed from hardware)

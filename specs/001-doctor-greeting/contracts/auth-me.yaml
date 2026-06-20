@@ -1,0 +1,95 @@
+openapi: "3.0.3"
+info:
+  title: TremoAI Auth — Me Endpoint
+  version: "1.0.0"
+  description: Returns the profile of the currently authenticated user.
+
+paths:
+  /api/auth/me/:
+    get:
+      summary: Get current user profile
+      description: >
+        Returns the profile of the doctor identified by the JWT access token
+        in the Authorization header. Used by the frontend to display a
+        personalized greeting and confirm the authenticated identity.
+      operationId: getMe
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Authenticated user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+              example:
+                id: 1
+                email: "doctor@example.com"
+                first_name: "Ahmed"
+                last_name: "Hassan"
+                role: "doctor"
+                date_joined: "2026-01-01T00:00:00Z"
+                last_login: "2026-06-14T10:00:00Z"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "Authentication credentials were not provided."
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    UserProfile:
+      type: object
+      required:
+        - id
+        - email
+        - first_name
+        - last_name
+        - role
+      properties:
+        id:
+          type: integer
+          description: Unique user identifier
+        email:
+          type: string
+          format: email
+          description: Doctor's email address (primary identifier)
+        first_name:
+          type: string
+          description: Doctor's first name
+          example: "Ahmed"
+        last_name:
+          type: string
+          description: Doctor's last name
+          example: "Hassan"
+        role:
+          type: string
+          enum: [doctor, admin]
+          description: User role
+        date_joined:
+          type: string
+          format: date-time
+          description: Account creation timestamp
+        last_login:
+          type: string
+          format: date-time
+          nullable: true
+          description: Most recent login timestamp
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message

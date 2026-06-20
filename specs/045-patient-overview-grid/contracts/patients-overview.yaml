@@ -1,0 +1,122 @@
+openapi: 3.0.3
+info:
+  title: TremoAI — Patients Overview Endpoint
+  version: "1.0"
+  description: Returns the doctor's patient list with avatar, name, and live device status for the Patient Overview Grid on the dashboard.
+
+paths:
+  /api/patients/overview/:
+    get:
+      summary: List doctor's patients with overview data
+      description: |
+        Returns a list of all patients assigned to the authenticated doctor.
+        Each item includes the patient's full name, optional avatar URL,
+        and a boolean indicating whether the patient's device transmitted
+        telemetry within the last 60 seconds (device_online).
+        Requires doctor role. Returns 403 for admin users.
+      operationId: listPatientsOverview
+      tags:
+        - Patients
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Patient overview list returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - count
+                  - results
+                properties:
+                  count:
+                    type: integer
+                    minimum: 0
+                    description: Total number of patients assigned to the doctor
+                    example: 3
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PatientOverviewItem'
+              examples:
+                doctor_with_patients:
+                  summary: Doctor with 2 patients
+                  value:
+                    count: 2
+                    results:
+                      - id: 1
+                        full_name: "Ahmed Karim Nour"
+                        avatar_url: "https://example.com/avatars/ahmed.jpg"
+                        device_online: true
+                      - id: 2
+                        full_name: "Sara Ali"
+                        avatar_url: ""
+                        device_online: false
+                doctor_with_no_patients:
+                  summary: Doctor with no assigned patients
+                  value:
+                    count: 0
+                    results: []
+        "401":
+          description: No valid authentication token provided
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Authentication credentials were not provided."
+        "403":
+          description: Authenticated user is not a doctor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Only doctors can access the patients overview."
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    PatientOverviewItem:
+      type: object
+      required:
+        - id
+        - full_name
+        - avatar_url
+        - device_online
+      properties:
+        id:
+          type: integer
+          description: Unique patient identifier
+          example: 1
+        full_name:
+          type: string
+          description: Patient's full name as a single string
+          example: "Ahmed Karim Nour"
+        avatar_url:
+          type: string
+          description: |
+            URL to the patient's avatar photo.
+            Empty string ("") means no photo is on file — frontend should render initials fallback.
+          example: "https://example.com/avatars/ahmed.jpg"
+        device_online:
+          type: boolean
+          description: |
+            True if any of the patient's devices transmitted telemetry within the last 60 seconds.
+            False if the patient has no device, or if the last telemetry was more than 60 seconds ago.
+          example: true
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message

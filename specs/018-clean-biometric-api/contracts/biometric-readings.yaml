@@ -1,0 +1,196 @@
+openapi: "3.0.3"
+info:
+  title: BiometricReading API
+  description: Read-only endpoints for BiometricReading records. No flex fields exposed.
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    BiometricReading:
+      type: object
+      description: A single timestamped sensor reading from a patient's wearable glove.
+      required:
+        - id
+        - patient_id
+        - timestamp
+        - aX
+        - aY
+        - aZ
+        - gX
+        - gY
+        - gZ
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          example: 1
+        patient_id:
+          type: integer
+          readOnly: true
+          description: Foreign key reference to the patient who generated this reading.
+          example: 5
+        timestamp:
+          type: string
+          format: date-time
+          readOnly: true
+          description: UTC timestamp when this sensor reading was captured.
+          example: "2026-02-18T12:00:00Z"
+        aX:
+          type: number
+          format: float
+          readOnly: true
+          description: Accelerometer X-axis value.
+          example: 0.12
+        aY:
+          type: number
+          format: float
+          readOnly: true
+          description: Accelerometer Y-axis value.
+          example: -0.05
+        aZ:
+          type: number
+          format: float
+          readOnly: true
+          description: Accelerometer Z-axis value (gravity component ~9.81 at rest).
+          example: 9.81
+        gX:
+          type: number
+          format: float
+          readOnly: true
+          description: Gyroscope X-axis value.
+          example: 0.01
+        gY:
+          type: number
+          format: float
+          readOnly: true
+          description: Gyroscope Y-axis value.
+          example: 0.02
+        gZ:
+          type: number
+          format: float
+          readOnly: true
+          description: Gyroscope Z-axis value.
+          example: -0.01
+      # NOTE: flex_1, flex_2, flex_3, flex_4, flex_5 are intentionally absent.
+      # These fields were removed in Feature E-2.1 and must never appear in this contract.
+
+    PaginatedBiometricReadingList:
+      type: object
+      properties:
+        count:
+          type: integer
+          example: 150
+        next:
+          type: string
+          format: uri
+          nullable: true
+          example: "http://localhost:8000/api/biometric-readings/?page=2"
+        previous:
+          type: string
+          format: uri
+          nullable: true
+          example: null
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BiometricReading'
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Authentication credentials were not provided."
+
+paths:
+  /api/biometric-readings/:
+    get:
+      summary: List biometric readings
+      description: |
+        Returns a paginated list of BiometricReading records accessible to the authenticated user.
+        - Doctors see readings for all patients they created or are assigned to.
+        - Patients see only their own readings.
+      operationId: biometricReadings_list
+      parameters:
+        - name: patient
+          in: query
+          description: Filter by patient ID.
+          required: false
+          schema:
+            type: integer
+        - name: page
+          in: query
+          description: Page number for pagination.
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Paginated list of biometric readings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBiometricReadingList'
+        "401":
+          description: Authentication required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "403":
+          description: Permission denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/biometric-readings/{id}/:
+    get:
+      summary: Retrieve a biometric reading
+      description: Returns a single BiometricReading record by ID. Access control same as list endpoint.
+      operationId: biometricReadings_retrieve
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: The unique ID of the BiometricReading record.
+      responses:
+        "200":
+          description: BiometricReading record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BiometricReading'
+        "401":
+          description: Authentication required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "403":
+          description: Permission denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "404":
+          description: Reading not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

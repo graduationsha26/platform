@@ -1,0 +1,118 @@
+openapi: "3.0.3"
+info:
+  title: TremoAI Inference API — Permission Update
+  description: |
+    Documents the permission change applied to the inference endpoint
+    as part of feature 039-backend-arch-align.
+
+    The endpoint itself is unchanged. Only the authorization gate changes:
+    from IsAuthenticated → IsDoctorOrAdmin.
+  version: "2.0.0"
+
+paths:
+  /api/inference/:
+    post:
+      summary: Run tremor prediction
+      description: |
+        Classifies sensor data and returns a tremor prediction with severity.
+
+        **Authorization change (Feature 039)**: Restricted from any authenticated
+        user to users with role `doctor` or `admin` only.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: model
+          schema:
+            type: string
+            enum: [rf, svm, lstm, cnn_1d]
+          required: false
+          description: ML model to use. Defaults to settings.DEFAULT_INFERENCE_MODEL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sensor_data]
+              properties:
+                sensor_data:
+                  type: array
+                  description: Array of sensor readings (6-axis IMU windows)
+                  items:
+                    type: array
+                    items:
+                      type: number
+      responses:
+        "200":
+          description: Successful prediction
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prediction:
+                    type: boolean
+                    description: True if tremor detected
+                  severity:
+                    type: integer
+                    minimum: 0
+                    maximum: 3
+                  model_used:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+                  confidence_score:
+                    type: number
+                    nullable: true
+                  inference_time_ms:
+                    type: number
+                    nullable: true
+                  input_validation:
+                    type: object
+        "400":
+          description: Invalid input data or unknown model
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "401":
+          description: Missing or invalid JWT token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "403":
+          description: |
+            Authenticated user does not have `doctor` or `admin` role.
+            Added by feature 039.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Only doctors or admins can perform this action."
+        "503":
+          description: Model file not loadable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        error_code:
+          type: string
+          nullable: true

@@ -1,0 +1,447 @@
+openapi: 3.0.3
+info:
+  title: TremoAI Patients API
+  description: Patient profile management and doctor-patient assignment endpoints
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+
+paths:
+  /patients/:
+    get:
+      summary: List patients
+      description: Get list of patients (doctors see assigned patients, patients see only self)
+      tags:
+        - Patients
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: Page number
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+          description: Items per page
+      responses:
+        '200':
+          description: List of patients
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    example: 42
+                  next:
+                    type: string
+                    nullable: true
+                    example: "http://localhost:8000/api/patients/?page=2"
+                  previous:
+                    type: string
+                    nullable: true
+                    example: null
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PatientList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      summary: Create patient
+      description: Create new patient record (doctors only)
+      tags:
+        - Patients
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientCreate'
+      responses:
+        '201':
+          description: Patient created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientDetail'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /patients/{id}/:
+    get:
+      summary: Get patient details
+      description: Retrieve patient profile (doctors see assigned patients, patients see only self)
+      tags:
+        - Patients
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Patient ID
+      responses:
+        '200':
+          description: Patient details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      summary: Update patient
+      description: Update patient information (doctors only)
+      tags:
+        - Patients
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Patient ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientUpdate'
+      responses:
+        '200':
+          description: Patient updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientDetail'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /patients/search/:
+    get:
+      summary: Search patients
+      description: Search patients by name (partial match, case-insensitive)
+      tags:
+        - Patients
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Patient name to search (partial match)
+          example: "john"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PatientList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /patients/{id}/assign-doctor/:
+    post:
+      summary: Assign doctor to patient
+      description: Create doctor-patient assignment (doctors only)
+      tags:
+        - Patients
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Patient ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - doctor_id
+              properties:
+                doctor_id:
+                  type: integer
+                  description: ID of doctor to assign
+                  example: 5
+      responses:
+        '201':
+          description: Doctor assigned to patient
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  doctor_id:
+                    type: integer
+                    example: 5
+                  patient_id:
+                    type: integer
+                    example: 10
+                  assigned_at:
+                    type: string
+                    format: date-time
+                    example: "2026-02-15T10:30:00Z"
+        '400':
+          description: Assignment already exists or invalid doctor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  schemas:
+    PatientList:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        full_name:
+          type: string
+          example: "Jane Smith"
+        date_of_birth:
+          type: string
+          format: date
+          example: "1965-03-15"
+        contact_email:
+          type: string
+          example: "jane.smith@example.com"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-02-15T10:30:00Z"
+
+    PatientDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        full_name:
+          type: string
+          example: "Jane Smith"
+        date_of_birth:
+          type: string
+          format: date
+          example: "1965-03-15"
+        contact_phone:
+          type: string
+          example: "+1234567890"
+        contact_email:
+          type: string
+          example: "jane.smith@example.com"
+        medical_notes:
+          type: string
+          example: "Diagnosed with Parkinson's in 2020. Tremors primarily in right hand."
+        assigned_doctors:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                example: 5
+              email:
+                type: string
+                example: "doctor@example.com"
+              full_name:
+                type: string
+                example: "Dr. John Doe"
+        paired_device:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: integer
+              example: 1
+            serial_number:
+              type: string
+              example: "GLV123456"
+            status:
+              type: string
+              enum: [online, offline]
+              example: "online"
+        created_by:
+          type: object
+          properties:
+            id:
+              type: integer
+            email:
+              type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PatientCreate:
+      type: object
+      required:
+        - full_name
+        - date_of_birth
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: "Jane Smith"
+        date_of_birth:
+          type: string
+          format: date
+          example: "1965-03-15"
+        contact_phone:
+          type: string
+          example: "+1234567890"
+        contact_email:
+          type: string
+          format: email
+          example: "jane.smith@example.com"
+        medical_notes:
+          type: string
+          example: "Diagnosed with Parkinson's in 2020."
+
+    PatientUpdate:
+      type: object
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        date_of_birth:
+          type: string
+          format: date
+        contact_phone:
+          type: string
+        contact_email:
+          type: string
+          format: email
+        medical_notes:
+          type: string
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Authentication credentials were not provided"
+            code: "not_authenticated"
+
+    Forbidden:
+      description: User lacks permission for this operation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "You do not have permission to perform this action"
+            code: "permission_denied"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Patient not found"
+            code: "not_found"
+
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Validation failed"
+            code: "validation_error"
+            details:
+              full_name: ["This field is required"]
+              date_of_birth: ["Date cannot be in the future"]
+
+security:
+  - BearerAuth: []

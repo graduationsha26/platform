@@ -1,0 +1,217 @@
+---
+# Inference API Contract: Update ML Prediction Endpoint (Feature 024)
+# Branch: 024-update-predict-endpoint | Date: 2026-02-18
+
+## Endpoint Contract
+
+endpoint:
+  method: POST
+  path: /api/inference/
+  description: Submit sensor data for tremor severity prediction
+  authentication: JWT Bearer token (required)
+  query_parameters:
+    - name: model
+      type: string
+      required: false
+      default: "rf"
+      choices: [rf, svm, lstm, cnn_1d]
+      description: Model to use for inference
+
+## Request Contract (ML Models — Feature 024 Updated)
+
+request_ml:
+  description: "ML model request (RF or SVM): 1D array of exactly 6 sensor features"
+  content_type: application/json
+  schema:
+    sensor_data:
+      type: array
+      items:
+        type: number
+      minItems: 6
+      maxItems: 6
+      description: "Exactly 6 numeric values: [aX, aY, aZ, gX, gY, gZ]"
+  example:
+    sensor_data: [0.5, -0.3, 10.2, 0.05, -0.02, 0.01]
+  feature_order:
+    - index: 0
+      name: aX
+      description: Accelerometer X-axis
+    - index: 1
+      name: aY
+      description: Accelerometer Y-axis
+    - index: 2
+      name: aZ
+      description: Accelerometer Z-axis
+    - index: 3
+      name: gX
+      description: Gyroscope X-axis
+    - index: 4
+      name: gY
+      description: Gyroscope Y-axis
+    - index: 5
+      name: gZ
+      description: Gyroscope Z-axis
+
+request_dl:
+  description: "DL model request (LSTM or CNN): 2D array of 128 timesteps × 6 axes (unchanged)"
+  schema:
+    sensor_data:
+      type: array
+      items:
+        type: array
+        items:
+          type: number
+      minItems: 128
+      maxItems: 128
+      description: "128 rows × 6 columns (128 timesteps, each with [aX, aY, aZ, gX, gY, gZ])"
+
+## Response Contract (Success — Unchanged from Feature 008)
+
+response_success:
+  status: 200
+  schema:
+    prediction:
+      type: boolean
+      description: "Tremor detected (true) or not (false)"
+    severity:
+      type: integer
+      minimum: 0
+      maximum: 3
+      description: "0=none, 1=mild, 2=moderate, 3=severe"
+    model_used:
+      type: string
+      description: "Model used: rf, svm, lstm, cnn_1d"
+    timestamp:
+      type: string
+      format: ISO 8601
+    confidence_score:
+      type: number
+      minimum: 0.0
+      maximum: 1.0
+      description: "P3 metadata — model confidence"
+    inference_time_ms:
+      type: integer
+      description: "P3 metadata — inference duration"
+    model_version:
+      type: string
+      description: "P3 metadata — model version identifier"
+    input_validation:
+      type: object
+      properties:
+        data_quality:
+          type: string
+          enum: [good, degraded, poor]
+        missing_values:
+          type: boolean
+        out_of_range_values:
+          type: boolean
+  example:
+    prediction: true
+    severity: 2
+    model_used: "rf"
+    timestamp: "2026-02-18T12:00:00.000Z"
+    confidence_score: 0.78
+    inference_time_ms: 45
+    model_version: "rf_v1_2026-02-18"
+    input_validation:
+      data_quality: "good"
+      missing_values: false
+      out_of_range_values: false
+
+## Error Response Contracts (Feature 024 — New Validation Error)
+
+error_wrong_feature_count:
+  status: 400
+  trigger: "ML sensor_data has length != 6"
+  schema:
+    error:
+      type: string
+      value: "Invalid input data"
+    error_code:
+      type: string
+      value: "INVALID_INPUT_SHAPE"
+    details:
+      type: object
+      properties:
+        sensor_data:
+          type: array
+          items:
+            type: string
+  example:
+    error: "Invalid input data"
+    error_code: "INVALID_INPUT_SHAPE"
+    details:
+      sensor_data:
+        - "ML models require exactly 6 features [aX, aY, aZ, gX, gY, gZ], got 18"
+
+error_non_numeric:
+  status: 400
+  trigger: "ML sensor_data contains non-numeric values"
+  example:
+    error: "Invalid input data"
+    error_code: "INVALID_INPUT_SHAPE"
+    details:
+      sensor_data:
+        - "For ML models, sensor_data must be a 1D array of numbers"
+
+error_nan_inf:
+  status: 400
+  trigger: "sensor_data contains NaN or Inf (pre-existing)"
+  example:
+    error: "Invalid sensor values detected: NaN (not a number) values found. Please ensure all sensor readings are valid numbers."
+    error_code: "INVALID_SENSOR_VALUES"
+
+error_empty:
+  status: 400
+  trigger: "sensor_data is empty list"
+  example:
+    error: "Invalid input data"
+    error_code: "INVALID_INPUT_SHAPE"
+    details:
+      sensor_data:
+        - "sensor_data cannot be empty"
+
+error_model_not_found:
+  status: 400
+  trigger: "Invalid model query parameter"
+  example:
+    error: "Invalid model name: xyz"
+    error_code: "MODEL_NOT_FOUND"
+    available_models: [rf, svm, lstm, cnn_1d]
+
+## Validation Rule Changes (Feature 024)
+
+validation_changes:
+  file: backend/inference/serializers.py
+  method: InferenceRequestSerializer.validate_sensor_data
+  before:
+    - "Validates list is non-empty"
+    - "Validates first element type (number=ML, list=DL)"
+    - "For ML: validates all elements are numbers (no count check)"
+  after:
+    - "Validates list is non-empty"
+    - "Validates first element type (number=ML, list=DL)"
+    - "For ML: validates all elements are numbers"
+    - "For ML: validates len(value) == 6 (NEW — raises ValidationError if != 6)"
+
+## Backward Compatibility
+
+backward_compatibility:
+  dl_models:
+    status: unchanged
+    note: "DL models still accept 2D (128, 6) arrays — no change"
+  response_format:
+    status: unchanged
+    note: "Response schema is identical to Feature 008"
+  authentication:
+    status: unchanged
+    note: "JWT Bearer token still required"
+  url_path:
+    status: unchanged
+    path: POST /api/inference/
+  model_selection:
+    status: unchanged
+    note: "?model=rf|svm|lstm|cnn_1d query param unchanged"
+  breaking_change:
+    - "ML requests with != 6 features now return 400 (previously returned 500 from sklearn error)"
+    - "This is a fix, not a true breaking change — old behavior was unintentional server error"

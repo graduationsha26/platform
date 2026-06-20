@@ -1,0 +1,155 @@
+openapi: "3.0.3"
+info:
+  title: CMG Servo Position Command API
+  version: "1.0"
+  description: >
+    Endpoint for doctors to send gimbal position commands (set_position or home)
+    to a paired glove device via MQTT. Part of Feature 028: CMG Gimbal Servo Control.
+
+paths:
+  /api/cmg/servo/commands/:
+    post:
+      summary: Send a servo position or home command
+      description: >
+        Issues a servo command to the specified device. For `set_position`,
+        at least one of `pitch_deg` or `roll_deg` must be provided. For `home`,
+        neither angle field is required. The platform validates the angles against
+        the device's active calibration and publishes the command via MQTT.
+        Only doctors may call this endpoint.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/SetPositionCommand'
+                - $ref: '#/components/schemas/HomeCommand'
+            examples:
+              set_position:
+                summary: Move to specific pitch and roll angles
+                value:
+                  device_id: 5
+                  command: set_position
+                  pitch_deg: 20.0
+                  roll_deg: -5.0
+              set_pitch_only:
+                summary: Move pitch axis only (roll unchanged)
+                value:
+                  device_id: 5
+                  command: set_position
+                  pitch_deg: 15.0
+              home:
+                summary: Return gimbal to center position
+                value:
+                  device_id: 5
+                  command: home
+      responses:
+        "200":
+          description: Command successfully published to MQTT broker
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServoCommandResponse'
+              example:
+                success: true
+                command_id: "a3f7c1e2-84b0-4d9e-b1a2-0123456789ab"
+                device_id: 5
+                command: set_position
+                target_pitch_deg: 20.0
+                target_roll_deg: -5.0
+                message: "Command published to device"
+        "400":
+          description: >
+            Validation error — device not found, device not paired, angle out of
+            calibrated range, both angles omitted for set_position, or angles
+            provided for home command.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                out_of_range:
+                  value: { "error": "pitch_deg 60.0 exceeds configured maximum of 45.0 for this device." }
+                device_not_paired:
+                  value: { "error": "Device is not paired to a patient." }
+                no_angles:
+                  value: { "error": "At least one of pitch_deg or roll_deg must be provided for set_position." }
+        "403":
+          description: Only doctors may issue servo commands
+          content:
+            application/json:
+              example: { "error": "Only doctors can send servo commands." }
+        "503":
+          description: MQTT broker not connected
+          content:
+            application/json:
+              example: { "error": "MQTT broker not connected. Command not sent." }
+
+components:
+  schemas:
+    SetPositionCommand:
+      type: object
+      required: [device_id, command]
+      properties:
+        device_id:
+          type: integer
+          description: Primary key of the target Device
+        command:
+          type: string
+          enum: [set_position]
+        pitch_deg:
+          type: number
+          format: float
+          description: Target pitch angle in degrees. NULL/omitted = do not move pitch axis.
+        roll_deg:
+          type: number
+          format: float
+          description: Target roll angle in degrees. NULL/omitted = do not move roll axis.
+      additionalProperties: false
+
+    HomeCommand:
+      type: object
+      required: [device_id, command]
+      properties:
+        device_id:
+          type: integer
+        command:
+          type: string
+          enum: [home]
+      additionalProperties: false
+
+    ServoCommandResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        command_id:
+          type: string
+          format: uuid
+        device_id:
+          type: integer
+        command:
+          type: string
+        target_pitch_deg:
+          type: number
+          nullable: true
+        target_roll_deg:
+          type: number
+          nullable: true
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

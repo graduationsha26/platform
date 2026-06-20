@@ -1,0 +1,204 @@
+title: MQTT Raw Sensor Reading Message Schema
+version: "1.0"
+date: "2026-02-18"
+feature: 019-remove-flex-mqtt
+description: >
+  Inbound MQTT message schema for individual raw sensor readings published
+  by TremoAI glove devices. Flex fields (flex_1-flex_5) have been removed
+  from the glove hardware and are NOT part of this schema.
+
+# ─────────────────────────────────────────────
+# MQTT Topic
+# ─────────────────────────────────────────────
+
+topic:
+  pattern: "devices/{serial_number}/reading"
+  wildcard: "devices/+/reading"
+  description: >
+    Published by glove device once per sensor sample. The serial_number in
+    the topic path must match the serial_number field in the JSON payload.
+  direction: glove → broker → platform backend
+
+# ─────────────────────────────────────────────
+# Message Payload Schema
+# ─────────────────────────────────────────────
+
+payload:
+  format: JSON
+  encoding: UTF-8
+  max_size_bytes: 512
+
+  required_fields:
+    serial_number:
+      type: string
+      description: Glove device serial number (uppercase alphanumeric)
+      min_length: 8
+      max_length: 20
+      pattern: "^[A-Z0-9]+$"
+      example: "GLV20241001"
+
+    timestamp:
+      type: string
+      format: ISO 8601 UTC
+      description: Exact time when this reading was sampled by the device
+      example: "2026-02-18T10:30:00.123Z"
+
+    aX:
+      type: number
+      unit: m/s²
+      description: Accelerometer X-axis reading
+      range: [-20.0, 20.0]
+      example: 1.23
+
+    aY:
+      type: number
+      unit: m/s²
+      description: Accelerometer Y-axis reading
+      range: [-20.0, 20.0]
+      example: -0.45
+
+    aZ:
+      type: number
+      unit: m/s²
+      description: Accelerometer Z-axis reading
+      range: [-20.0, 20.0]
+      example: 9.81
+
+    gX:
+      type: number
+      unit: °/s
+      description: Gyroscope X-axis reading
+      range: [-2000.0, 2000.0]
+      example: 0.12
+
+    gY:
+      type: number
+      unit: °/s
+      description: Gyroscope Y-axis reading
+      range: [-2000.0, 2000.0]
+      example: -0.34
+
+    gZ:
+      type: number
+      unit: °/s
+      description: Gyroscope Z-axis reading
+      range: [-2000.0, 2000.0]
+      example: 0.56
+
+  # ── Fields explicitly NOT in this schema ──────────────────────────────────
+  excluded_fields:
+    flex_1: &flex_excluded
+      present_in_schema: false
+      action_if_received: silently_ignored
+      reason: >
+        Flex sensor hardware removed from glove device. Field has no clinical
+        or operational meaning. Safe to discard if sent by legacy firmware.
+    flex_2: *flex_excluded
+    flex_3: *flex_excluded
+    flex_4: *flex_excluded
+    flex_5: *flex_excluded
+
+# ─────────────────────────────────────────────
+# Validation Rules
+# ─────────────────────────────────────────────
+
+validation:
+  missing_required_field:
+    action: reject_message
+    log_level: WARNING
+    reason: >
+      Cannot create a complete BiometricReading record without all six sensor
+      values.
+
+  wrong_type:
+    action: reject_message
+    log_level: WARNING
+    reason: >
+      Non-numeric sensor values cannot be stored or used in ML inference.
+
+  out_of_range:
+    action: accept_with_warning
+    log_level: WARNING
+    reason: >
+      Out-of-range values may indicate device malfunction or calibration
+      issues, but the reading is still stored for diagnostic purposes.
+      Consistent with feature_utils.validate_sensor_ranges(warn_only=True).
+
+  extra_fields:
+    action: silently_ignore
+    log_level: DEBUG
+    reason: >
+      Unknown fields (including legacy flex_1-flex_5) are harmless and must
+      not block valid readings from being processed.
+
+  invalid_timestamp:
+    action: reject_message
+    log_level: WARNING
+    reason: >
+      A non-parseable timestamp cannot be stored as a DateTimeField value.
+
+  invalid_serial_number:
+    action: reject_message
+    log_level: WARNING
+    reason: >
+      A malformed serial number cannot be used to look up the device and
+      patient association.
+
+# ─────────────────────────────────────────────
+# Example Messages
+# ─────────────────────────────────────────────
+
+examples:
+  standard_6_field_payload:
+    description: Normal payload from updated glove firmware (no flex fields)
+    topic: "devices/GLV20241001/reading"
+    payload: |
+      {
+        "serial_number": "GLV20241001",
+        "timestamp":     "2026-02-18T10:30:00.123Z",
+        "aX":  1.23,
+        "aY": -0.45,
+        "aZ":  9.81,
+        "gX":  0.12,
+        "gY": -0.34,
+        "gZ":  0.56
+      }
+    expected_outcome: >
+      Accepted. BiometricReading record created with all six sensor values.
+
+  legacy_11_field_payload:
+    description: Payload from older glove firmware that still sends flex fields
+    topic: "devices/GLV20241001/reading"
+    payload: |
+      {
+        "serial_number": "GLV20241001",
+        "timestamp":     "2026-02-18T10:30:00.123Z",
+        "aX":  1.23,
+        "aY": -0.45,
+        "aZ":  9.81,
+        "gX":  0.12,
+        "gY": -0.34,
+        "gZ":  0.56,
+        "flex_1": 0.5,
+        "flex_2": 0.3,
+        "flex_3": 0.7,
+        "flex_4": 0.2,
+        "flex_5": 0.4
+      }
+    expected_outcome: >
+      Accepted. BiometricReading record created with only the six sensor values.
+      flex_1 through flex_5 are silently discarded.
+
+  missing_required_field:
+    description: Payload missing a required sensor field
+    topic: "devices/GLV20241001/reading"
+    payload: |
+      {
+        "serial_number": "GLV20241001",
+        "timestamp":     "2026-02-18T10:30:00.123Z",
+        "aX":  1.23,
+        "aY": -0.45
+      }
+    expected_outcome: >
+      Rejected. ValidationError raised. Message logged at WARNING level.
+      No BiometricReading record created.

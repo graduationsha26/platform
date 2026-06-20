@@ -1,0 +1,25 @@
+{
+  "best_params": {
+    "num_leaves": 63,
+    "n_estimators": 300,
+    "max_depth": -1,
+    "learning_rate": 0.05
+  },
+  "best_cv_f1_macro": 0.8788099688214036,
+  "dataset": {
+    "n_windows": 10655,
+    "n_features": 66,
+    "class_distribution": {
+      "0": 3775,
+      "1": 3688,
+      "2": 3192
+    },
+    "n_files": 117
+  },
+  "window_metrics": {
+    "window_macro_precision": 0.8825143223337871,
+    "window_macro_recall": 0.8763739577523584,
+    "window_macro_f1": 0.8783380860337364,
+    "window_accuracy": 0.8756452369779446
+  }
+}

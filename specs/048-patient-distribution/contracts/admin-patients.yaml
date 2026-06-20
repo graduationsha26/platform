@@ -1,0 +1,177 @@
+openapi: 3.0.3
+info:
+  title: TremoAI — Patient Distribution (Admin) API
+  version: 1.0.0
+  description: >
+    Admin-only endpoints for center-wide patient distribution (feature 048).
+    All endpoints require a valid JWT for a user with role `admin`.
+    Non-admin authenticated users receive 403; unauthenticated requests receive 401.
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+paths:
+  /admin/patients/:
+    get:
+      summary: Center-wide patient roster (US1)
+      description: >
+        Returns every patient registered at the center with their single
+        effective assigned doctor (or null = Unassigned). Paginated, 50/page.
+      operationId: listAdminPatients
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+          description: 1-based page number.
+        - in: query
+          name: search
+          schema: { type: string }
+          description: Case-insensitive match on patient full_name or contact_email.
+      responses:
+        '200':
+          description: Paginated patient roster.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer, example: 5 }
+                  next: { type: string, nullable: true, example: null }
+                  previous: { type: string, nullable: true, example: null }
+                  results:
+                    type: array
+                    items: { $ref: '#/components/schemas/AdminPatientListItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Register a new patient, optionally assigning a doctor (US2)
+      operationId: registerAdminPatient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminPatientRegisterRequest' }
+      responses:
+        '201':
+          description: Patient created (and assigned if doctor_id provided).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPatientListItem' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/patients/{id}/assign/:
+    post:
+      summary: Assign or reassign a patient to a doctor (US3)
+      description: >
+        Replaces the patient's assignment so they belong to exactly one doctor.
+        Reassigning to the patient's current doctor is an idempotent no-op success.
+      operationId: assignAdminPatient
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+          description: Patient ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [doctor_id]
+              properties:
+                doctor_id:
+                  type: integer
+                  example: 1
+                  description: ID of an active doctor-role account.
+      responses:
+        '200':
+          description: Patient reassigned; returns the updated roster row.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPatientListItem' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    AssignedDoctor:
+      type: object
+      nullable: true
+      properties:
+        id: { type: integer, example: 1 }
+        name: { type: string, example: "Dr. John Smith" }
+        email: { type: string, example: "doctor@test.com" }
+
+    AdminPatientListItem:
+      type: object
+      properties:
+        id: { type: integer, example: 12 }
+        full_name: { type: string, example: "Jane Doe" }
+        date_of_birth: { type: string, format: date, example: "1970-05-15" }
+        contact_email: { type: string, example: "jane.doe@patient.com" }
+        created_at: { type: string, format: date-time }
+        assigned_doctor:
+          allOf: [ { $ref: '#/components/schemas/AssignedDoctor' } ]
+          description: Null when the patient has no doctor (Unassigned).
+
+    AdminPatientRegisterRequest:
+      type: object
+      required: [full_name, date_of_birth]
+      properties:
+        full_name: { type: string, example: "Jane Doe" }
+        date_of_birth: { type: string, format: date, example: "1970-05-15" }
+        contact_phone: { type: string, example: "+1234567890" }
+        contact_email: { type: string, example: "jane.doe@patient.com" }
+        medical_notes: { type: string, example: "Stage 2 Parkinson's." }
+        doctor_id:
+          type: integer
+          nullable: true
+          example: 1
+          description: Optional. If provided, must be an active doctor; the new patient is assigned to them. If omitted, the patient is created Unassigned.
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties: { detail: { type: string, example: "Authentication credentials were not provided." } }
+    Forbidden:
+      description: Authenticated but not an admin.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties: { detail: { type: string, example: "Only admins can perform this action." } }
+    NotFound:
+      description: Patient not found.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties: { detail: { type: string, example: "Not found." } }
+    ValidationError:
+      description: Field-level validation error (missing required field, invalid doctor).
+      content:
+        application/json:
+          schema:
+            type: object
+            example:
+              doctor_id: ["User must have doctor role."]
+              full_name: ["This field is required."]

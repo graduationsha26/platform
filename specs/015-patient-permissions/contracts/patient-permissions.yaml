@@ -1,0 +1,301 @@
+openapi: 3.0.3
+info:
+  title: Patient API — Permission Update (E-1.4)
+  description: |
+    Documents the updated access control rules for the Patient CRUD API.
+    No endpoint paths, methods, or request/response schemas change.
+    Only the authorization policy changes.
+  version: "1.4.0"
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+
+# ─── Security Scheme ──────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token issued by /api/auth/login/
+        Token payload MUST include `role` claim.
+        Accepted roles for patient endpoints: `doctor`, `admin`.
+
+  schemas:
+    PatientList:
+      type: object
+      properties:
+        id:
+          type: integer
+        full_name:
+          type: string
+        date_of_birth:
+          type: string
+          format: date
+        contact_phone:
+          type: string
+        created_by:
+          type: integer
+          description: ID of the doctor who created this patient record
+
+    PatientDetail:
+      allOf:
+        - $ref: '#/components/schemas/PatientList'
+        - type: object
+          properties:
+            contact_email:
+              type: string
+            medical_notes:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+    PatientCreate:
+      type: object
+      required: [full_name, date_of_birth]
+      properties:
+        full_name:
+          type: string
+        date_of_birth:
+          type: string
+          format: date
+        contact_phone:
+          type: string
+        contact_email:
+          type: string
+        medical_notes:
+          type: string
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+# ─── Authorization Policy (NEW in E-1.4) ─────────────────────────────────────
+# Before E-1.4: Only `doctor` role was allowed.
+# After  E-1.4: Both `doctor` and `admin` roles are allowed.
+#
+# Role-specific queryset scoping:
+#   doctor → can only see patients they created OR are assigned to
+#   admin  → can see ALL patients in the system
+#
+# Callers with any other role, or unauthenticated callers, receive:
+#   401 Unauthorized (no token)
+#   403 Forbidden (token present but role not authorized)
+
+# ─── Endpoints (unchanged from E-1.3) ─────────────────────────────────────────
+paths:
+  /patients/:
+    get:
+      summary: List patients
+      description: |
+        Returns a paginated list of patients visible to the authenticated user.
+        - doctor: only their created/assigned patients
+        - admin: all patients
+      security:
+        - BearerAuth: []
+      x-required-roles: [doctor, admin]
+      responses:
+        '200':
+          description: Paginated patient list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  next:
+                    type: string
+                    nullable: true
+                  previous:
+                    type: string
+                    nullable: true
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PatientList'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Role not authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Create patient
+      description: |
+        Creates a new patient record. The authenticated doctor becomes `created_by`.
+        Admin users can also create patients.
+      security:
+        - BearerAuth: []
+      x-required-roles: [doctor, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientCreate'
+      responses:
+        '201':
+          description: Patient created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientDetail'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+        '403':
+          description: Role not authorized
+
+  /patients/{id}/:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    get:
+      summary: Retrieve patient
+      description: |
+        Returns full patient record.
+        doctor: only if patient is in their scoped queryset
+        admin: any patient
+      security:
+        - BearerAuth: []
+      x-required-roles: [doctor, admin]
+      responses:
+        '200':
+          description: Patient detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientDetail'
+        '401':
+          description: Not authenticated
+        '403':
+          description: Role not authorized
+        '404':
+          description: Patient not found (or not in doctor's scope)
+
+    put:
+      summary: Full update patient
+      security:
+        - BearerAuth: []
+      x-required-roles: [doctor, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientCreate'
+      responses:
+        '200':
+          description: Patient updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientDetail'
+        '400':
+          description: Validation error
+        '401':
+          description: Not authenticated
+        '403':
+          description: Role not authorized
+        '404':
+          description: Not found
+
+    patch:
+      summary: Partial update patient
+      security:
+        - BearerAuth: []
+      x-required-roles: [doctor, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientCreate'
+      responses:
+        '200':
+          description: Patient updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientDetail'
+        '401':
+          description: Not authenticated
+        '403':
+          description: Role not authorized
+        '404':
+          description: Not found
+
+    delete:
+      summary: Delete patient
+      security:
+        - BearerAuth: []
+      x-required-roles: [doctor, admin]
+      responses:
+        '204':
+          description: Patient deleted
+        '401':
+          description: Not authenticated
+        '403':
+          description: Role not authorized
+        '404':
+          description: Not found
+
+  /patients/{id}/assign-doctor/:
+    post:
+      summary: Assign a doctor to patient
+      description: Both doctors and admins can assign doctors to patients.
+      security:
+        - BearerAuth: []
+      x-required-roles: [doctor, admin]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [doctor_id]
+              properties:
+                doctor_id:
+                  type: integer
+      responses:
+        '201':
+          description: Doctor assigned
+        '400':
+          description: Invalid doctor_id or already assigned
+        '401':
+          description: Not authenticated
+        '403':
+          description: Role not authorized
+        '404':
+          description: Patient not found

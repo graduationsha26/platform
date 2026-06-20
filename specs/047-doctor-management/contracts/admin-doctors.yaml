@@ -1,0 +1,205 @@
+openapi: 3.0.3
+info:
+  title: TremoAI — Staff (Doctor) Management API
+  version: 1.0.0
+  description: >
+    Admin-only endpoints for managing doctor accounts: list the roster with
+    per-doctor assigned patient counts, create a new doctor, and edit details
+    or toggle active status. Feature 047.
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+
+tags:
+  - name: Admin · Doctors
+    description: Admin-only doctor account management
+
+paths:
+  /admin/doctors/:
+    get:
+      tags: [Admin · Doctors]
+      summary: List doctor accounts with assigned patient counts
+      description: >
+        Returns a paginated list of all doctor-role accounts, each annotated
+        with the number of patients currently assigned to that doctor. Admin only.
+      operationId: listDoctors
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+          description: Page number (global default page size is 50).
+        - in: query
+          name: search
+          schema: { type: string }
+          required: false
+          description: Optional case-insensitive filter on doctor name/email.
+      responses:
+        '200':
+          description: Paginated roster of doctors.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DoctorList'
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Authenticated user is not an admin.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+    post:
+      tags: [Admin · Doctors]
+      summary: Create a new doctor account
+      description: >
+        Creates a doctor-role account from name, email, password, and optional
+        initial status. Email must be unique across all accounts. Admin only.
+      operationId: createDoctor
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DoctorCreate' }
+      responses:
+        '201':
+          description: Doctor created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Doctor' }
+        '400':
+          description: Validation error (duplicate email, missing/weak password, missing name).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ValidationError' }
+        '401':
+          description: Authentication required.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Admin role required.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /admin/doctors/{id}/:
+    patch:
+      tags: [Admin · Doctors]
+      summary: Update a doctor's details or toggle active status
+      description: >
+        Partially updates a doctor. Any subset of name, email, password, and
+        is_active may be supplied. Sending only is_active performs an
+        activate/deactivate toggle. A blank/absent password leaves the existing
+        password unchanged. Admin only.
+      operationId: updateDoctor
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+          description: Doctor account ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DoctorUpdate' }
+      responses:
+        '200':
+          description: Doctor updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Doctor' }
+        '400':
+          description: Validation error (e.g., email already in use by another account).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ValidationError' }
+        '401':
+          description: Authentication required.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Admin role required.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: No doctor account with the given id.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Doctor:
+      type: object
+      properties:
+        id: { type: integer, example: 12 }
+        name: { type: string, example: "Jane Smith" }
+        email: { type: string, format: email, example: "jane.smith@example.com" }
+        is_active: { type: boolean, example: true }
+        patient_count: { type: integer, minimum: 0, example: 7 }
+        date_joined: { type: string, format: date-time, example: "2026-05-01T09:30:00Z" }
+      required: [id, name, email, is_active, patient_count]
+
+    DoctorList:
+      type: object
+      properties:
+        count: { type: integer, example: 23 }
+        next: { type: string, nullable: true, example: null }
+        previous: { type: string, nullable: true, example: null }
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/Doctor' }
+      required: [count, results]
+
+    DoctorCreate:
+      type: object
+      properties:
+        name: { type: string, example: "Jane Smith" }
+        email: { type: string, format: email, example: "jane.smith@example.com" }
+        password: { type: string, format: password, writeOnly: true, example: "S0me-Strong-Pass" }
+        is_active: { type: boolean, default: true, example: true }
+      required: [name, email, password]
+
+    DoctorUpdate:
+      type: object
+      description: All fields optional; supply any subset. Blank/absent password leaves it unchanged.
+      properties:
+        name: { type: string, example: "Jane A. Smith" }
+        email: { type: string, format: email, example: "jane.a.smith@example.com" }
+        password: { type: string, format: password, writeOnly: true }
+        is_active: { type: boolean, example: false }
+
+    Error:
+      type: object
+      properties:
+        error: { type: string, example: "Only admins can perform this action." }
+      required: [error]
+
+    ValidationError:
+      type: object
+      description: DRF field-level validation errors (field name → list of messages).
+      additionalProperties:
+        type: array
+        items: { type: string }
+      example:
+        email: ["doctor with this email already exists."]
+        password: ["This password is too short. It must contain at least 8 characters."]

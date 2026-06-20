@@ -1,0 +1,371 @@
+openapi: "3.0.3"
+info:
+  title: Suppression Session API
+  description: |
+    Feature 029: CMG PID Controller Tuning
+    Start/stop/list suppression sessions and query mode status.
+  version: "1.0.0"
+
+paths:
+  /api/cmg/pid/sessions/:
+    post:
+      summary: Start a suppression session (enable PID suppression mode)
+      description: |
+        Creates an active SuppressionSession for the specified device.
+        Snapshots the current PIDConfig gains into the session record.
+        Publishes a retained MQTT pid_mode=enabled message to the device.
+        Returns 409 if the device already has an active session (stop it first).
+        Returns 400 if no PIDConfig exists for the device.
+        Doctor role required.
+      tags: [Suppression Sessions]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_id]
+              properties:
+                device_id:
+                  type: integer
+                  description: Device primary key
+            example:
+              device_id: 42
+      responses:
+        "201":
+          description: Session created; suppression enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuppressionSessionResponse"
+        "400":
+          description: Missing gains config, or device not paired to patient
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Active session already exists for this device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    get:
+      summary: List suppression sessions for a device
+      description: |
+        Returns sessions ordered by started_at descending, with aggregate
+        effectiveness summary (avg raw/residual amplitude, % reduction) per session.
+        Both doctor and patient roles with access to the device may call this.
+      tags: [Suppression Sessions]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: device_id
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, completed, interrupted]
+          description: Filter by session status
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Session list with effectiveness summaries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SuppressionSessionSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/cmg/pid/sessions/{session_pk}/:
+    delete:
+      summary: Stop a suppression session (disable PID suppression mode)
+      description: |
+        Marks the session as completed, sets ended_at, and publishes a retained
+        MQTT pid_mode=disabled message to the device.
+        Only the doctor who started the session (or any doctor with device access) may stop it.
+        Idempotent: stopping an already-completed session returns 200 without error.
+        Doctor role required.
+      tags: [Suppression Sessions]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: session_pk
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Session stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuppressionSessionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/cmg/pid/mode/{device_pk}/:
+    get:
+      summary: Get current suppression mode status for a device
+      description: |
+        Returns the current suppression mode: active session details if one exists,
+        or a simple inactive status. Used by the frontend to initialize the mode control UI.
+        Both doctor and patient roles may call this.
+      tags: [Suppression Sessions]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: device_pk
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Current mode status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuppressionModeStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/cmg/pid/sessions/{session_pk}/metrics/:
+    get:
+      summary: Get time-series metrics for a suppression session
+      description: |
+        Returns raw and residual tremor amplitude readings for the session,
+        ordered by device_timestamp ascending.
+        Both doctor and patient roles with device access may call this.
+      tags: [Suppression Metrics]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: session_pk
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Return only readings newer than this ISO timestamp
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 300
+            maximum: 3600
+      responses:
+        "200":
+          description: Metrics with session aggregate summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionMetricsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    SuppressionSessionResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        session_uuid:
+          type: string
+          format: uuid
+        device_id:
+          type: integer
+        patient_id:
+          type: integer
+        started_by_id:
+          type: integer
+        status:
+          type: string
+          enum: [active, completed, interrupted]
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        kp_pitch_snap:
+          type: number
+        ki_pitch_snap:
+          type: number
+        kd_pitch_snap:
+          type: number
+        kp_roll_snap:
+          type: number
+        ki_roll_snap:
+          type: number
+        kd_roll_snap:
+          type: number
+
+    SuppressionSessionSummary:
+      allOf:
+        - $ref: "#/components/schemas/SuppressionSessionResponse"
+        - type: object
+          properties:
+            avg_raw_amplitude_deg:
+              type: number
+              format: float
+              nullable: true
+              description: Average raw tremor amplitude over the session (null if no metrics yet)
+            avg_residual_amplitude_deg:
+              type: number
+              format: float
+              nullable: true
+            reduction_pct:
+              type: number
+              format: float
+              nullable: true
+              description: "Percentage reduction: (raw - residual) / raw * 100"
+
+    SuppressionModeStatus:
+      type: object
+      properties:
+        device_id:
+          type: integer
+        is_active:
+          type: boolean
+        session_id:
+          type: integer
+          nullable: true
+          description: Active session PK (null if inactive)
+        session_uuid:
+          type: string
+          format: uuid
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    SessionMetricsResponse:
+      type: object
+      properties:
+        session_id:
+          type: integer
+        session_status:
+          type: string
+          enum: [active, completed, interrupted]
+        aggregate:
+          type: object
+          properties:
+            avg_raw_amplitude_deg:
+              type: number
+              nullable: true
+            avg_residual_amplitude_deg:
+              type: number
+              nullable: true
+            reduction_pct:
+              type: number
+              nullable: true
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/SuppressionMetric"
+
+    SuppressionMetric:
+      type: object
+      properties:
+        device_timestamp:
+          type: string
+          format: date-time
+        raw_amplitude_deg:
+          type: number
+          format: float
+        residual_amplitude_deg:
+          type: number
+          format: float
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Missing or invalid query parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Authentication credentials missing or invalid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

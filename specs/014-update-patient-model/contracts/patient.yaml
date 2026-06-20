@@ -1,0 +1,251 @@
+openapi: "3.0.3"
+info:
+  title: Patient API — E-1.3 Updated Contract
+  description: >
+    Patient management API after removing the user account link.
+    Patients are data-only records: no user field appears in responses.
+    Clinical fields: full_name, contact_phone, medical_notes (and date_of_birth, contact_email).
+    Doctor-patient assignment via DoctorPatientAssignment junction (unchanged).
+  version: "1.1.0"
+
+paths:
+  /api/patients/:
+    get:
+      summary: List patients accessible to the authenticated doctor
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Paginated list of patients
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientListResponse'
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Not a doctor
+
+    post:
+      summary: Create a new patient record
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientCreateRequest'
+            examples:
+              minimal:
+                summary: Create patient with required fields only
+                value:
+                  full_name: "Ahmed Al-Rashidi"
+                  date_of_birth: "1965-03-22"
+              complete:
+                summary: Create patient with all fields
+                value:
+                  full_name: "Ahmed Al-Rashidi"
+                  date_of_birth: "1965-03-22"
+                  contact_phone: "+966501234567"
+                  contact_email: "ahmed@example.com"
+                  medical_notes: "Diagnosed stage 2 Parkinson's. Right-hand dominant tremor."
+      responses:
+        "201":
+          description: Patient created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientDetail'
+        "400":
+          description: Validation error
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Not a doctor
+
+  /api/patients/{id}/:
+    get:
+      summary: Retrieve a patient record
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Patient detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientDetail'
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Not a doctor, or not assigned to this patient
+        "404":
+          description: Patient not found
+
+    patch:
+      summary: Update a patient record (partial)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientUpdateRequest'
+      responses:
+        "200":
+          description: Updated patient detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientDetail'
+        "400":
+          description: Validation error
+        "403":
+          description: Access denied
+        "404":
+          description: Patient not found
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    PatientCreateRequest:
+      type: object
+      required:
+        - full_name
+        - date_of_birth
+      properties:
+        full_name:
+          type: string
+          maxLength: 200
+          description: Patient's full name (required)
+        date_of_birth:
+          type: string
+          format: date
+          description: Patient's date of birth (must not be in future)
+        contact_phone:
+          type: string
+          maxLength: 20
+          description: Optional contact phone number
+        contact_email:
+          type: string
+          format: email
+          description: Optional contact email address
+        medical_notes:
+          type: string
+          description: Optional free-form clinical notes
+
+    PatientUpdateRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+          maxLength: 200
+        contact_phone:
+          type: string
+          maxLength: 20
+        contact_email:
+          type: string
+          format: email
+        medical_notes:
+          type: string
+
+    PatientDetail:
+      type: object
+      description: >
+        Full patient detail. Note: No 'user' field — patients are data-only records
+        with no linked authentication account.
+      properties:
+        id:
+          type: integer
+        full_name:
+          type: string
+        date_of_birth:
+          type: string
+          format: date
+        contact_phone:
+          type: string
+        contact_email:
+          type: string
+          format: email
+        medical_notes:
+          type: string
+        created_by:
+          $ref: '#/components/schemas/DoctorRef'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PatientListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        previous:
+          type: string
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PatientSummary'
+
+    PatientSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        full_name:
+          type: string
+        date_of_birth:
+          type: string
+          format: date
+        contact_email:
+          type: string
+          format: email
+        created_at:
+          type: string
+          format: date-time
+
+    DoctorRef:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+
+    ValidationError:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string

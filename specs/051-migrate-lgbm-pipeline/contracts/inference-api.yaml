@@ -1,0 +1,111 @@
+openapi: 3.0.3
+info:
+  title: TremoAI Inference API (LGBM 3-class)
+  version: 1.0.0
+  description: >
+    Updated /api/inference/ contract after migrating to the 3-class LightGBM model.
+    Replaces the prior binary RF/SVM output. Auth: JWT (doctor or admin).
+
+paths:
+  /api/inference/:
+    post:
+      summary: Classify a sensor window into one of three movement classes
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: model
+          required: false
+          schema:
+            type: string
+            default: lgbm
+            enum: [lgbm]
+          description: >
+            Model id. Default is the migrated LightGBM model. (DL ids lstm/cnn_1d
+            may remain loadable but are not the default.)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InferenceRequest'
+      responses:
+        '200':
+          description: Successful 3-class prediction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceResponse'
+        '400':
+          description: Invalid input or unknown model
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: Missing/invalid JWT
+        '403':
+          description: User lacks doctor/admin role
+        '503':
+          description: Model could not be loaded
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    InferenceRequest:
+      type: object
+      required: [sensor_data]
+      properties:
+        sensor_data:
+          description: >
+            A single analysis window as a 2-D array of shape (window_samples, 6)
+            in physical units (accel m/s², gyro °/s), axis order
+            [aX, aY, aZ, gX, gY, gZ]. The service applies the 66-feature pipeline
+            (no scaler). Windows are expected at the model rate (66.67 Hz, ~67 samples);
+            callers streaming at other rates must resample first.
+          type: array
+          items:
+            type: array
+            items: { type: number }
+            minItems: 6
+            maxItems: 6
+    InferenceResponse:
+      type: object
+      required: [prediction, predicted_class, probabilities, model_used, timestamp]
+      properties:
+        prediction:
+          type: integer
+          enum: [0, 1, 2]
+          description: Predicted class index (0=Non-Tremor, 1=Tremor, 2=Voluntary)
+        predicted_class:
+          type: string
+          enum: [Non-Tremor, Tremor, Voluntary]
+        confidence_score:
+          type: number
+          description: Max class probability (0.0–1.0)
+        probabilities:
+          type: object
+          required: [non_tremor, tremor, voluntary]
+          properties:
+            non_tremor: { type: number }
+            tremor: { type: number }
+            voluntary: { type: number }
+        model_used:
+          type: string
+          example: lgbm
+        model_version:
+          type: string
+        inference_time_ms:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        error_code: { type: string }

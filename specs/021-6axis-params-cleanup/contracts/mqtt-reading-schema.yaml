@@ -1,0 +1,176 @@
+openapi: "3.0.3"
+info:
+  title: MQTT Reading Message Schema & Normalization Config
+  version: "1.0"
+  description: >
+    Defines the schema for inbound MQTT sensor reading messages (E-3.3) and the
+    normalization configuration file used by the ML inference pipeline (E-3.4).
+    No HTTP endpoints are added by this feature — this contract documents the
+    internal data formats.
+
+components:
+  schemas:
+
+    MQTTReadingPayload:
+      type: object
+      description: >
+        Inbound MQTT message payload for a raw glove sensor reading
+        (topic: devices/{serial}/reading).
+        The system extracts exactly the 6 required sensor fields and
+        silently discards all others (including mX, mY, mZ and flex_1–5).
+      required:
+        - serial_number
+        - timestamp
+        - aX
+        - aY
+        - aZ
+        - gX
+        - gY
+        - gZ
+      properties:
+        serial_number:
+          type: string
+          minLength: 8
+          maxLength: 20
+          pattern: "^[A-Z0-9]+$"
+          description: Device serial number (uppercase alphanumeric, 8–20 chars)
+          example: "DEVICEABC123"
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp from the device
+          example: "2026-02-18T10:30:05Z"
+        aX:
+          type: number
+          description: Accelerometer X-axis reading (raw ADC counts)
+          example: 0.12
+        aY:
+          type: number
+          description: Accelerometer Y-axis reading (raw ADC counts)
+          example: -0.05
+        aZ:
+          type: number
+          description: Accelerometer Z-axis reading (raw ADC counts)
+          example: 9.81
+        gX:
+          type: number
+          description: Gyroscope X-axis reading (raw ADC counts)
+          example: 1.23
+        gY:
+          type: number
+          description: Gyroscope Y-axis reading (raw ADC counts)
+          example: -0.44
+        gZ:
+          type: number
+          description: Gyroscope Z-axis reading (raw ADC counts)
+          example: 0.09
+        mX:
+          type: number
+          description: >
+            [SILENTLY IGNORED] Magnetometer X-axis. Hardware magnetometer is
+            disabled; value is always a constant sentinel (e.g., -1). Never
+            extracted, stored, or forwarded to the ML pipeline.
+          example: -1
+        mY:
+          type: number
+          description: >
+            [SILENTLY IGNORED] Magnetometer Y-axis. Hardware magnetometer is
+            disabled; value is always a constant sentinel (e.g., -1).
+          example: -1
+        mZ:
+          type: number
+          description: >
+            [SILENTLY IGNORED] Magnetometer Z-axis. Hardware magnetometer is
+            disabled; value is always a constant sentinel (e.g., -1).
+          example: -1
+      additionalProperties: true
+      example:
+        serial_number: "DEVICEABC123"
+        timestamp: "2026-02-18T10:30:05Z"
+        aX: 0.12
+        aY: -0.05
+        aZ: 9.81
+        gX: 1.23
+        gY: -0.44
+        gZ: 0.09
+        mX: -1
+        mY: -1
+        mZ: -1
+
+    NormalizationConfig:
+      type: object
+      description: >
+        The normalization configuration file (params.json) used by the ML inference
+        pipeline to z-score normalize raw 6-axis sensor readings before model input.
+        Must contain exactly 6 feature entries — one per active sensor axis.
+        No magnetometer (mX, mY, mZ) or flex sensor entries are ever present.
+      required:
+        - features
+        - metadata
+      properties:
+        features:
+          type: array
+          minItems: 6
+          maxItems: 6
+          description: Exactly 6 normalization parameter entries, one per active axis
+          items:
+            $ref: "#/components/schemas/FeatureStats"
+        metadata:
+          $ref: "#/components/schemas/NormalizationMetadata"
+      example:
+        features:
+          - name: "aX"
+            mean: 54.17
+            std: 5220.68
+          - name: "aY"
+            mean: 5756.36
+            std: 5201.57
+          - name: "aZ"
+            mean: -13338.65
+            std: 3058.97
+          - name: "gX"
+            mean: 5002.22
+            std: 485.18
+          - name: "gY"
+            mean: -239.64
+            std: 999.92
+          - name: "gZ"
+            mean: 275.45
+            std: 3340.55
+        metadata:
+          generated_from: "Dataset.csv"
+          n_samples: 27995
+          generated_date: "2026-02-16T11:23:55.728970Z"
+
+    FeatureStats:
+      type: object
+      required:
+        - name
+        - mean
+        - std
+      properties:
+        name:
+          type: string
+          enum: ["aX", "aY", "aZ", "gX", "gY", "gZ"]
+          description: Sensor axis name (must be one of the 6 active axes)
+        mean:
+          type: number
+          description: Mean value of this axis in the training dataset
+        std:
+          type: number
+          exclusiveMinimum: 0
+          description: Standard deviation of this axis (must be > 0 to prevent division-by-zero)
+
+    NormalizationMetadata:
+      type: object
+      properties:
+        generated_from:
+          type: string
+          description: Filename of the training dataset used to generate this config
+        n_samples:
+          type: integer
+          description: Number of training samples used for statistics computation
+        generated_date:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when this config was generated

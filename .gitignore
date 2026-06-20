@@ -1,0 +1,99 @@
+# TremoAI Web Platform - Git Ignore
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# Django
+*.log
+db.sqlite3
+db.sqlite3-journal
+/media
+backend/media/
+/staticfiles
+.env
+.env.local
+
+# ML/DL Data Preparation (Feature 004)
+backend/ml_data/processed/*
+!backend/ml_data/processed/.gitkeep
+
+# LightGBM pipeline (Feature 051) — large regenerable dataset (run train.py to recreate).
+# NOTE: the model .pkl/.json are intentionally TRACKED, matching the [043] model-sharing convention.
+backend/ml_data/combined_processed_data.csv
+
+# React/Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI/ML Models — [043] Unignored: .pkl and .h5 tracked for model sharing & deployment
+# backend/models/*.pkl
+# backend/models/*.h5
+# backend/models/*.pb
+
+# ML/DL Model Training (Feature 005) — [043] Unignored: v3 models, scalers, JSON metadata tracked
+# backend/ml_models/models/*.pkl
+# backend/ml_models/models/*.json
+!backend/ml_models/models/.gitkeep
+
+# Raw Feature Pipeline Models (Feature 011) — [043] Unignored: .pkl artifacts tracked
+# backend/ml_models/*.pkl
+# backend/ml_models/backup/*.pkl
+backend/ml_data/params.json.backup
+
+# Deep Learning Models Training (Feature 006) — [043] Unignored: .h5 artifacts tracked
+# backend/dl_models/models/*.h5
+# backend/dl_models/models/*.keras
+# backend/dl_models/models/*.json
+backend/dl_models/models/*.txt
+!backend/dl_models/models/.gitkeep
+
+# Raw Feature Pipeline DL Models (Feature 011) — [043] Unignored: .h5 artifacts tracked
+# backend/dl_models/*.h5
+# backend/dl_models/backup/*.h5
+
+# Model Comparison & Deployment Selection (Feature 007)
+backend/model_comparison/reports/*.md
+backend/model_comparison/reports/*.pdf
+backend/model_comparison/reports/*.json
+backend/model_comparison/reports/*.csv
+backend/model_comparison/reports/charts/*.png
+!backend/model_comparison/reports/.gitkeep
+!backend/model_comparison/reports/charts/.gitkeep
+backend/model_comparison/decisions/*.md
+backend/model_comparison/decisions/*.pdf
+!backend/model_comparison/decisions/.gitkeep
+
+# Firmware (Feature 025)
+firmware/include/config.h
+firmware/.pio/
+firmware/.vscode/

@@ -1,0 +1,307 @@
+openapi: 3.0.0
+info:
+  title: TremoAI WebSocket API - Real-Time Tremor Data
+  version: 1.0.0
+  description: |
+    WebSocket message schemas for real-time tremor data streaming.
+
+    **Connection URL**: `ws://localhost:8000/ws/tremor-data/{patient_id}/?token={jwt_token}`
+
+    **Authentication**: JWT token in query parameter
+
+    **Message Flow**:
+    1. Client connects with JWT token
+    2. Server validates token and patient access
+    3. Server sends status "connected"
+    4. Server broadcasts tremor_data messages when device sends data
+    5. Client can send ping, server responds with pong
+
+servers:
+  - url: ws://localhost:8000
+    description: Local development WebSocket server
+
+paths:
+  /ws/tremor-data/{patient_id}/:
+    get:
+      summary: Establish WebSocket connection for live tremor monitoring
+      description: |
+        Opens a WebSocket connection to receive real-time tremor data for a specific patient.
+        Requires JWT authentication via query parameter.
+      parameters:
+        - name: patient_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Patient primary key
+          example: 123
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          description: JWT access token for authentication
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        '101':
+          description: WebSocket connection upgraded successfully
+        '401':
+          description: Unauthorized - Invalid or expired JWT token
+        '403':
+          description: Forbidden - User lacks access to patient data
+
+components:
+  schemas:
+    # ============================================
+    # Outgoing Messages (Backend → Client)
+    # ============================================
+
+    TremorDataMessage:
+      type: object
+      required:
+        - type
+        - patient_id
+        - device_serial
+        - timestamp
+        - tremor_intensity
+        - frequency
+        - session_duration
+        - received_at
+      properties:
+        type:
+          type: string
+          enum: [tremor_data]
+          description: Message type identifier
+          example: tremor_data
+        patient_id:
+          type: integer
+          description: Patient primary key
+          example: 123
+        device_serial:
+          type: string
+          description: Device serial number (8-20 alphanumeric)
+          pattern: '^[A-Z0-9]{8,20}$'
+          example: GLV123456789
+        timestamp:
+          type: string
+          format: date-time
+          description: Session start time from device (ISO 8601 UTC)
+          example: '2026-02-15T14:30:00.000Z'
+        tremor_intensity:
+          type: array
+          items:
+            type: number
+            format: float
+            minimum: 0.0
+            maximum: 1.0
+          description: Normalized tremor magnitude readings
+          example: [0.12, 0.15, 0.18, 0.14, 0.11, 0.13]
+        frequency:
+          type: number
+          format: float
+          minimum: 0
+          description: Dominant tremor frequency in Hz
+          example: 4.5
+        session_duration:
+          type: integer
+          minimum: 0
+          description: Session duration in milliseconds
+          example: 100
+        prediction:
+          $ref: '#/components/schemas/MLPrediction'
+          description: ML prediction result (optional, omitted if ML unavailable)
+        received_at:
+          type: string
+          format: date-time
+          description: Server timestamp when data was received
+          example: '2026-02-15T14:30:00.250Z'
+
+    MLPrediction:
+      type: object
+      required:
+        - severity
+        - confidence
+      properties:
+        severity:
+          type: string
+          enum: [mild, moderate, severe]
+          description: Predicted tremor severity classification
+          example: moderate
+        confidence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Prediction confidence score
+          example: 0.92
+
+    StatusMessage:
+      type: object
+      required:
+        - type
+        - status
+        - message
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [status]
+          description: Message type identifier
+          example: status
+        status:
+          type: string
+          enum: [connected, waiting, device_unpaired, error]
+          description: Status code
+          example: connected
+        message:
+          type: string
+          description: Human-readable status message
+          example: 'Connected to live monitoring for patient 123. Waiting for device data...'
+        timestamp:
+          type: string
+          format: date-time
+          description: Server timestamp
+          example: '2026-02-15T14:30:00.000Z'
+
+    ErrorMessage:
+      type: object
+      required:
+        - type
+        - error_code
+        - error_message
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [error]
+          description: Message type identifier
+          example: error
+        error_code:
+          type: string
+          enum: [unauthorized, forbidden, internal_error]
+          description: Machine-readable error code
+          example: unauthorized
+        error_message:
+          type: string
+          description: Human-readable error description
+          example: 'Invalid or expired authentication token'
+        timestamp:
+          type: string
+          format: date-time
+          description: Server timestamp
+          example: '2026-02-15T14:30:00.000Z'
+
+    PongMessage:
+      type: object
+      required:
+        - type
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [pong]
+          description: Message type identifier
+          example: pong
+        timestamp:
+          type: string
+          format: date-time
+          description: Server timestamp
+          example: '2026-02-15T14:30:00.050Z'
+
+    # ============================================
+    # Incoming Messages (Client → Backend)
+    # ============================================
+
+    PingMessage:
+      type: object
+      required:
+        - type
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [ping]
+          description: Message type identifier
+          example: ping
+        timestamp:
+          type: string
+          format: date-time
+          description: Client timestamp
+          example: '2026-02-15T14:30:00.000Z'
+
+  # ============================================
+  # WebSocket Close Codes (Custom Codes: 4xxx)
+  # ============================================
+
+  # Standard WebSocket close codes: https://developer.mozilla.org/en-US/docs/Web/API/CloseEvent
+  # Custom application codes use 4xxx range
+
+  # 4401: Unauthorized
+  #   - Invalid JWT token
+  #   - Expired JWT token
+  #   - Missing token
+
+  # 4403: Forbidden
+  #   - User lacks access to patient data
+  #   - User is neither assigned doctor nor the patient
+
+  # 4500: Internal Server Error
+  #   - Unexpected server-side error
+  #   - Database connection failure
+  #   - Channel layer communication failure
+
+# ============================================
+# Example Message Sequences
+# ============================================
+
+# Sequence 1: Successful Connection and Data Streaming
+# ------------------------------------------------------
+# 1. Client → Server: WebSocket handshake with JWT token
+# 2. Server → Client: StatusMessage (status: "connected")
+# 3. Device → MQTT Broker → Server: Sensor data
+# 4. Server → Client: TremorDataMessage (with prediction)
+# 5. Server → Client: TremorDataMessage (with prediction)
+# ... (continuous streaming)
+
+# Sequence 2: Authentication Failure
+# -----------------------------------
+# 1. Client → Server: WebSocket handshake with invalid JWT
+# 2. Server → Client: ErrorMessage (error_code: "unauthorized")
+# 3. Server closes connection with code 4401
+
+# Sequence 3: Authorization Failure
+# ----------------------------------
+# 1. Client → Server: WebSocket handshake with valid JWT
+# 2. Server validates: User is not assigned to patient
+# 3. Server → Client: ErrorMessage (error_code: "forbidden")
+# 4. Server closes connection with code 4403
+
+# Sequence 4: Device Unpaired Mid-Session
+# ----------------------------------------
+# 1. Client connected and receiving TremorDataMessage
+# 2. Device unpaired from patient (via REST API)
+# 3. Server → Client: StatusMessage (status: "device_unpaired")
+# 4. Server stops broadcasting data (connection remains open)
+
+# Sequence 5: Keepalive Ping/Pong
+# --------------------------------
+# 1. Client → Server: PingMessage (every 30 seconds)
+# 2. Server → Client: PongMessage
+# ... (repeats to keep connection alive)
+
+# ============================================
+# MQTT Topic Structure (for reference)
+# ============================================
+
+# Topic Pattern: devices/{serial_number}/data
+# Example: devices/GLV123456789/data
+#
+# Payload Schema (JSON):
+# {
+#   "serial_number": "GLV123456789",
+#   "timestamp": "2026-02-15T14:30:00.000Z",
+#   "tremor_intensity": [0.12, 0.15, 0.18],
+#   "frequency": 4.5,
+#   "timestamps": ["2026-02-15T14:30:00.000Z", ...],
+#   "session_duration": 100
+# }

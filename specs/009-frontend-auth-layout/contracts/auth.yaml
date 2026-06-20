@@ -1,0 +1,285 @@
+openapi: 3.0.3
+info:
+  title: TremoAI Authentication API
+  description: Authentication endpoints for login and registration
+  version: 1.0.0
+  contact:
+    name: TremoAI Platform
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+
+paths:
+  /auth/login/:
+    post:
+      summary: User Login
+      description: Authenticate user with email and password, returns JWT tokens
+      operationId: loginUser
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: User email address
+                  example: "doctor@example.com"
+                password:
+                  type: string
+                  format: password
+                  description: User password
+                  example: "SecurePassword123"
+                  minLength: 1
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - access
+                  - refresh
+                  - user
+                properties:
+                  access:
+                    type: string
+                    description: JWT access token (short-lived, 5 minutes)
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  refresh:
+                    type: string
+                    description: JWT refresh token (long-lived, 24 hours)
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid request (missing fields)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Email and password are required"
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Invalid credentials"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "An unexpected error occurred"
+
+  /auth/register/:
+    post:
+      summary: User Registration
+      description: Create a new user account with doctor or patient role
+      operationId: registerUser
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - password
+                - role
+              properties:
+                name:
+                  type: string
+                  description: User full name or display name
+                  minLength: 2
+                  maxLength: 100
+                  example: "Dr. Sarah Johnson"
+                email:
+                  type: string
+                  format: email
+                  description: User email address (must be unique)
+                  example: "sarah.johnson@example.com"
+                password:
+                  type: string
+                  format: password
+                  description: User password (min 8 chars, must contain letter and number)
+                  minLength: 8
+                  example: "SecurePass123"
+                role:
+                  type: string
+                  enum:
+                    - doctor
+                    - patient
+                  description: User role in the system
+                  example: "doctor"
+      responses:
+        '201':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - email
+                  - name
+                  - role
+                  - message
+                properties:
+                  id:
+                    type: integer
+                    description: New user ID
+                    example: 42
+                  email:
+                    type: string
+                    format: email
+                    example: "sarah.johnson@example.com"
+                  name:
+                    type: string
+                    example: "Dr. Sarah Johnson"
+                  role:
+                    type: string
+                    enum:
+                      - doctor
+                      - patient
+                    example: "doctor"
+                  message:
+                    type: string
+                    description: Success message
+                    example: "Account created successfully"
+        '400':
+          description: Invalid request or validation error
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: string
+                    description: General error message
+                  field_errors:
+                    type: object
+                    description: Field-specific validation errors
+                    properties:
+                      email:
+                        type: array
+                        items:
+                          type: string
+                        example: ["Email already exists"]
+                      password:
+                        type: array
+                        items:
+                          type: string
+                        example: ["Password must contain at least one letter and one number"]
+                      name:
+                        type: array
+                        items:
+                          type: string
+                        example: ["Name must be at least 2 characters"]
+              examples:
+                emailExists:
+                  summary: Email already registered
+                  value:
+                    error: "Email already exists"
+                    field_errors:
+                      email: ["Email already exists"]
+                weakPassword:
+                  summary: Password validation failure
+                  value:
+                    error: "Password validation failed"
+                    field_errors:
+                      password: ["Password must be at least 8 characters", "Password must contain at least one letter and one number"]
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "An unexpected error occurred"
+
+components:
+  schemas:
+    User:
+      type: object
+      description: Authenticated user object
+      required:
+        - id
+        - email
+        - name
+        - role
+      properties:
+        id:
+          type: integer
+          description: User ID (primary key)
+          example: 42
+        email:
+          type: string
+          format: email
+          description: User email address
+          example: "doctor@example.com"
+        name:
+          type: string
+          description: User full name
+          example: "Dr. John Doe"
+        role:
+          type: string
+          enum:
+            - doctor
+            - patient
+          description: User role
+          example: "doctor"
+        avatar:
+          type: string
+          format: uri
+          nullable: true
+          description: Profile picture URL (future feature)
+          example: null
+        created_at:
+          type: string
+          format: date-time
+          description: Account creation timestamp (ISO 8601)
+          example: "2026-02-16T10:30:00Z"
+
+    Error:
+      type: object
+      description: Generic error response
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "An error occurred"
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from /auth/login/
+
+security: []  # Authentication endpoints are public (no auth required)
+
+tags:
+  - name: Authentication
+    description: User authentication and registration endpoints

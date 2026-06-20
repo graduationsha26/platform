@@ -5,7 +5,7 @@ Unlike backend/test_AI_live.py (which classifies in Python from raw telemetry), 
 NO inference: it simply subscribes to the glove's MQTT telemetry and prints the prediction the
 **ESP32 computed locally**, in the exact same 7-field format used before:
 
-  Sample, Prediction, Confidence, Precision, Non-Tremor %, Tremor %, Voluntary %
+  Sample, Prediction, Confidence, Precision, Non-Tremor %, Tremor %
 
 The firmware appends these fields to its telemetry payload (see firmware/src/mqtt_publisher.cpp):
   prediction (0/1/2 or -1 warming up), predicted_class, confidence, probabilities{...}.
@@ -25,7 +25,7 @@ import logging
 
 import paho.mqtt.client as mqtt
 
-CLASS_NAMES = {0: "Non-Tremor", 1: "Tremor", 2: "Voluntary"}
+CLASS_NAMES = {0: "Non-Tremor", 1: "Tremor"}   # Feature 053: binary
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_META = os.path.join(SCRIPT_DIR, "ml_models", "lgbm_tremor_model.json")
@@ -56,7 +56,7 @@ class Monitor:
 
     def _print_header(self):
         if not self.header_printed:
-            print("Sample, Prediction, Confidence, Precision, Non-Tremor %, Tremor %, Voluntary %")
+            print("Sample, Prediction, Confidence, Precision, Non-Tremor %, Tremor %")
             self.header_printed = True
 
     def handle(self, data):
@@ -71,10 +71,9 @@ class Monitor:
         probs = data.get("probabilities", {}) or {}
         p_non = float(probs.get("non_tremor", 0.0))
         p_tre = float(probs.get("tremor", 0.0))
-        p_vol = float(probs.get("voluntary", 0.0))
         conf = data.get("confidence")
         if conf is None:
-            conf = max(p_non, p_tre, p_vol)
+            conf = max(p_non, p_tre)
         name = data.get("predicted_class") or CLASS_NAMES.get(int(pred), str(pred))
 
         self._print_header()
@@ -85,8 +84,7 @@ class Monitor:
             f"{float(conf) * 100:.1f}, "
             f"{self.precision_pct:.1f}, "
             f"{p_non * 100:.1f}, "
-            f"{p_tre * 100:.1f}, "
-            f"{p_vol * 100:.1f}"
+            f"{p_tre * 100:.1f}"
         )
 
 

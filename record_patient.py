@@ -13,7 +13,7 @@ PASSWORD = "ZIYAD_ASHRAF"  # In production, use environment variables or secure 
 # ─── File Setup ───────────────────────────────────────────────────────────────
 # Create a unique filename for each session based on the current time
 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-FILENAME = f"shaking_try_{timestamp}.csv"
+FILENAME = f"stable_glove_data_{timestamp}.csv"
 
 # Open file in append/write mode
 csv_file = open(FILENAME, mode='w', newline='')

@@ -1,9 +1,9 @@
 {
   "model_type": "lightgbm",
+  "task": "binary",
   "classes": {
     "0": "Non-Tremor",
-    "1": "Tremor",
-    "2": "Voluntary"
+    "1": "Tremor"
   },
   "n_features": 66,
   "feature_names": [
@@ -86,6 +86,7 @@
     "scaler": null
   },
   "hyperparameters": {
+    "objective": "binary",
     "n_estimators": 300,
     "learning_rate": 0.05,
     "num_leaves": 63,
@@ -94,14 +95,42 @@
   "smote": {
     "random_state": 42
   },
+  "data_integrity": {
+    "median_resultant_accel_max": 40.0,
+    "quarantined_raw_adc_files": {
+      "Control": [
+        "ID01010101.csv",
+        "ID01010102.csv",
+        "ID01010103.csv",
+        "ID01010104.csv",
+        "ID01010105.csv",
+        "ID01010106.csv",
+        "ID01010107.csv",
+        "ID01010108.csv",
+        "ID01030101.csv",
+        "ID01030102.csv",
+        "ID01030103.csv",
+        "ID01030104.csv",
+        "ID01030105.csv",
+        "ID01030106.csv",
+        "ID01030107.csv",
+        "ID01030108.csv"
+      ]
+    },
+    "extra_non_tremor_sources": [
+      "stable_glove_data_20260620_215329.csv"
+    ]
+  },
   "metrics": {
     "cv": "GroupKFold(4) on file_id",
-    "window_macro_precision": 0.8830010394659759,
-    "window_macro_recall": 0.8759417550534598,
-    "window_macro_f1": 0.8779333922562067,
-    "window_accuracy": 0.875524140409728,
-    "file_macro_precision": 0.9795472287275566,
-    "file_accuracy": 0.9743589743589743
+    "window_macro_precision": 0.8696015659516017,
+    "window_macro_recall": 0.8752074942616234,
+    "window_macro_f1": 0.870817349387948,
+    "window_accuracy": 0.8718249316139117,
+    "window_tremor_precision": 0.9178184534927157,
+    "window_tremor_recall": 0.8492913930176288,
+    "file_macro_precision": 0.9791666666666667,
+    "file_accuracy": 0.9852941176470589
   },
-  "trained_at": "2026-06-20T09:25:14.493498+00:00"
+  "trained_at": "2026-06-20T22:06:30.082294+00:00"
 }

@@ -64,7 +64,7 @@ class InferenceRequestSerializer(serializers.Serializer):
 
 class InferenceResponseSerializer(serializers.Serializer):
     """
-    Serializer for inference response (Feature 051 — 3-class LightGBM).
+    Serializer for inference response (Feature 053 — BINARY LightGBM).
 
     Core: prediction (class index), predicted_class, probabilities, model_used, timestamp
     Optional: confidence_score, inference_time_ms, model_version, input_validation
@@ -72,17 +72,17 @@ class InferenceResponseSerializer(serializers.Serializer):
 
     prediction = serializers.IntegerField(
         min_value=0,
-        max_value=2,
-        help_text="Predicted class index: 0 (Non-Tremor), 1 (Tremor), 2 (Voluntary)"
+        max_value=1,
+        help_text="Predicted class index: 0 (Non-Tremor), 1 (Tremor)"
     )
 
     predicted_class = serializers.CharField(
-        help_text="Predicted class label: Non-Tremor | Tremor | Voluntary"
+        help_text="Predicted class label: Non-Tremor | Tremor"
     )
 
     probabilities = serializers.DictField(
         child=serializers.FloatField(),
-        help_text="Per-class probabilities: {non_tremor, tremor, voluntary}"
+        help_text="Per-class probabilities: {non_tremor, tremor}"
     )
 
     model_used = serializers.CharField(

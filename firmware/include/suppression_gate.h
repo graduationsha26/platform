@@ -1,9 +1,10 @@
 // suppression_gate.h — Smoothed Tremor-gated suppression (Feature 052, FR-003a/FR-003b, SC-009).
 //
-// Converts the stream of on-device class decisions into a SAFE engage/disengage signal for the
-// PID suppression: a sliding majority vote + asymmetric hysteresis + minimum dwell time +
-// authority ramp, so the actuators never toggle per-cycle when the classifier oscillates at a
-// class boundary. Replaces the firmware's previous unconditional always-on suppression.
+// Converts the stream of on-device class decisions into a SAFE, PROPORTIONAL authority signal for
+// the PID suppression (Feature 053): the Tremor probability is mapped through a low-confidence
+// floor + full-authority ceiling to a [0,1] target, then ramped (GATE_RAMP_PER_S) so the actuators
+// never toggle per-cycle when the classifier oscillates near the boundary. Mild tremor -> gentle
+// correction; strong tremor -> full authority. Replaces the earlier vote-based binary gate.
 //
 // Single-writer (ClassificationTask, Core 0 via gate_update) / single-reader (ControlTask,
 // Core 1 via gate_authority/gate_suppression_active). Published outputs are 32-bit volatiles

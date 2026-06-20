@@ -62,9 +62,9 @@ typedef struct {
     float    battery_level;     // % (0.0–100.0), populated by MqttTask before publish
     uint64_t t_sensor_us;       // esp_timer_get_time() at end of Kalman update (µs since boot)
                                 // Used by ControlTask to compute sensor-to-actuation latency
-    // 052-edge-ai-inference: on-device classifier output, populated by MqttTask before publish.
-    int8_t   pred_class;        // -1 = not ready/unknown; else 0=Non-Tremor,1=Tremor,2=Voluntary
-    float    pred_proba[3];     // softmax probabilities [non_tremor, tremor, voluntary]
+    // 052-edge-ai-inference / 053 binary: on-device classifier output, set by MqttTask before publish.
+    int8_t   pred_class;        // -1 = not ready/unknown; else 0=Non-Tremor,1=Tremor
+    float    pred_proba[2];     // sigmoid probabilities [non_tremor, tremor]
     bool     pred_valid;        // true once the classifier has produced a real decision
 } FusedReading;
 

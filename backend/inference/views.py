@@ -30,10 +30,10 @@ class InferenceAPIView(APIView):
     Request body:
         - sensor_data: 2-D array (window_size, 6) — [aX, aY, aZ, gX, gY, gZ]
 
-    Response (Feature 051 — 3-class LightGBM):
-        - prediction: int class index (0=Non-Tremor, 1=Tremor, 2=Voluntary)
+    Response (Feature 053 — BINARY LightGBM):
+        - prediction: int class index (0=Non-Tremor, 1=Tremor)
         - predicted_class: string label
-        - probabilities: {non_tremor, tremor, voluntary}
+        - probabilities: {non_tremor, tremor}
         - model_used: string
         - timestamp: ISO 8601
         - (optional) confidence_score, inference_time_ms, model_version, input_validation
@@ -150,11 +150,11 @@ class InferenceAPIView(APIView):
                 include_metadata=True  # US3: Include P3 metadata
             )
 
-            # Construct 3-class response (Feature 051: LightGBM Non-Tremor/Tremor/Voluntary)
+            # Construct binary response (Feature 053: LightGBM Non-Tremor/Tremor)
             response_data = {
-                'prediction': result['prediction'],            # class index 0/1/2
+                'prediction': result['prediction'],            # class index 0/1
                 'predicted_class': result['predicted_class'],  # label string
-                'probabilities': result['probabilities'],      # {non_tremor, tremor, voluntary}
+                'probabilities': result['probabilities'],      # {non_tremor, tremor}
                 'model_used': model_name,
                 'timestamp': timezone.now().isoformat()
             }

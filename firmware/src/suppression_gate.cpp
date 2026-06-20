@@ -52,42 +52,33 @@ void gate_update(const Decision& d, uint32_t now_us) {
         return;
     }
 
-    // Push this cycle's vote. Invalid/warm-up -> non-tremor (default-safe).
-    const uint8_t v = (d.valid && d.cls == TremorClass::TREMOR) ? 1 : 0;
-    s_votes[s_vhead] = v;
-    s_vhead = (s_vhead + 1) % GATE_N_VOTE;
-    if (s_vcount < GATE_N_VOTE) ++s_vcount;
-
-    int tremor_votes = 0;
-    for (int i = 0; i < GATE_N_VOTE; ++i) tremor_votes += s_votes[i];
-    const int nontremor_votes = s_vcount - tremor_votes;
-
-    // State change only after the minimum dwell time (anti-chatter) and with a full window.
-    const bool dwell_ok = (s_last_change_us == 0) ||
-                          ((now_us - s_last_change_us) >= (uint32_t)GATE_MIN_DWELL_MS * 1000u);
-    if (dwell_ok) {
-        if (!s_active && s_vcount >= GATE_N_VOTE && tremor_votes >= GATE_ENGAGE_VOTES) {
-            s_active = true;
-            s_last_change_us = now_us;
-        } else if (s_active && nontremor_votes >= GATE_DISENGAGE_VOTES) {
-            s_active = false;
-            s_last_change_us = now_us;
-        }
+    // Feature 053 — PROPORTIONAL engagement: authority target scales with the Tremor probability.
+    //   invalid/warm-up -> 0 (default-safe; never engage from unknown).
+    //   p <= GATE_P_LO  -> 0 (low-confidence floor; no dither from classifier noise).
+    //   p >= GATE_P_HI  -> 1 (full authority).
+    //   between         -> linear.
+    float target = 0.0f;
+    if (d.valid) {
+        const float p = d.proba[(int)TremorClass::TREMOR];   // proba[1] = P(Tremor)
+        target = (p - GATE_P_LO) / (GATE_P_HI - GATE_P_LO);
+        target = std::min(1.0f, std::max(0.0f, target));
     }
+    s_active = (target > 0.0f);
 
-    // Ramp authority toward the target (smooth actuator engage/disengage).
+    // Ramp authority toward the target (smooth actuator engage/disengage; the ramp + floor are the
+    // anti-chatter mechanism now — a probability hovering near the boundary cannot toggle per-cycle).
     const float dt = (s_last_update_us == 0) ? 0.0f : (now_us - s_last_update_us) / 1e6f;
     s_last_update_us = now_us;
-    const float target = s_active ? 1.0f : 0.0f;
     const float step = GATE_RAMP_PER_S * dt;
     float a = s_authority;
     if (a < target)      a = std::min(target, a + step);
     else if (a > target) a = std::max(target, a - step);
 
-    // Derive reported state.
+    // Derive reported state from authority vs. its target.
     Gate g;
-    if (s_active)        g = (a >= 1.0f) ? Gate::ENGAGED : Gate::ENGAGING;
-    else                 g = (a <= 0.0f) ? Gate::DISENGAGED : Gate::DISENGAGING;
+    if (a >= 0.999f)        g = Gate::ENGAGED;
+    else if (a <= 0.001f)   g = Gate::DISENGAGED;
+    else                    g = (target > a) ? Gate::ENGAGING : Gate::DISENGAGING;
 
     s_authority = a;
     s_pub_active = (a > 0.0f);

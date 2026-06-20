@@ -59,3 +59,12 @@
 #ifndef GATE_RAMP_PER_S
 #define GATE_RAMP_PER_S        2.0f   // suppression authority change per second (0..1 ramp)
 #endif
+
+// Feature 053 — proportional engagement: map Tremor probability -> authority target.
+//   p <= GATE_P_LO -> 0 (neutral, no dither);  p >= GATE_P_HI -> 1 (full);  linear between.
+#ifndef GATE_P_LO
+#define GATE_P_LO              0.50f  // low-confidence floor (below this: no suppression)
+#endif
+#ifndef GATE_P_HI
+#define GATE_P_HI              0.90f  // full-authority ceiling
+#endif

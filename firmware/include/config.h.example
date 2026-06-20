@@ -98,20 +98,25 @@
 #define CMG_PWM_RESOLUTION    16      // 16-bit duty (0–65535); duty = pulse_us × 65536 / 20000
 
 // Gimbal geometry — torque [-1,+1] maps directly to a pulse width (no degree abstraction)
+// Feature 053 (US1): full-range linear mapping. SPAN is the HALF-swing, so it must equal
+// (CENTER-MIN)=(MAX-CENTER)=900 -> torque ±1.0 lands exactly on the 600/2400 clamps (no dead band).
 #define CMG_GIMBAL_CENTER_US  1500    // µs pulse at zero torque
 #define CMG_GIMBAL_TRIM_US       0    // shift mechanical neutral; keep small (±100µs)
-#define CMG_GIMBAL_SPAN_US     600    // µs swing for full ±1.0 torque
-#define CMG_GIMBAL_MIN_US      900    // hard clamp — physical servo-safe minimum
-#define CMG_GIMBAL_MAX_US     2100    // hard clamp — physical servo-safe maximum
+#define CMG_GIMBAL_SPAN_US     900    // µs half-swing for full ±1.0 torque (was 600)
+#define CMG_GIMBAL_MIN_US      600    // hard clamp — physical servo-safe minimum (was 900)
+#define CMG_GIMBAL_MAX_US     2400    // hard clamp — physical servo-safe maximum (was 2100)
 
 // ESC arm/run sequence — fixed constant throttle, no retry or spin-up verification
 #define CMG_ESC_ARM_MS         5000   // ms to hold the arm pulse before commanding the run pulse
 #define CMG_ESC_ARM_PULSE_US   1000   // µs arm/idle pulse
-#define CMG_ESC_RUN_PULSE_US   1080   // µs constant flywheel run pulse (set once at startup)
+// Feature 053 (US1): RAISE flywheel speed for reaction-torque authority (τ = H·ω_gimbal, H∝Ω).
+// Start 1200; bench-tune UP to the highest value with no brownout/reset/ESC re-arm.
+#define CMG_ESC_RUN_PULSE_US   1200   // µs constant flywheel run pulse (was 1080)
 
 // Torque normalization and slew limiting (cmg_set_gimbal())
-#define CMG_TORQUE_FULL_SCALE  160.0f // divides raw PID output down into normalized torque [-1,1]
-#define CMG_TORQUE_SLEW_PER_S   40.0f // max torque change per second — caps current ramp / brownout risk
+// Feature 053 (US1): un-squash the PID->CMG signal (snappier saturation + faster full-range swing).
+#define CMG_TORQUE_FULL_SCALE   80.0f // divides raw PID output into normalized torque [-1,1] (was 160)
+#define CMG_TORQUE_SLEW_PER_S  150.0f // max torque change per second (was 40) — caps current ramp
 
 // ─── PID Controller Tuning ────────────────────────────────────────────────────
 // Feedback: gyro angular velocity (gY — see Tremor Axis Select below), setpoint = 0 deg/s.
@@ -138,8 +143,8 @@
 #define MQTT_TASK_STACK     8192     // bytes — JSON serialization + MQTT library
 
 // ─── 052-edge-ai-inference: On-Device Tremor Classifier ───────────────────────
-// The glove classifies movement locally (Non-Tremor=0, Tremor=1, Voluntary=2) and gates PID
-// suppression on sustained Tremor. The required constants (EDGE_*, CLASSIFY_*, GATE_*) live in
+// The glove classifies movement locally (Feature 053 BINARY: Non-Tremor=0, Tremor=1) and gates PID
+// suppression proportionally to the Tremor probability. The constants (EDGE_*, CLASSIFY_*, GATE_*) live in
 // the COMMITTED header firmware/include/edge_config.h (so they exist even with an old config.h).
 // To tune the gate/cadence, either edit edge_config.h or override a value by #define-ing it here
 // BEFORE the firmware includes edge_config.h. Example override:

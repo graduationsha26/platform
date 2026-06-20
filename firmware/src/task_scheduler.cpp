@@ -57,7 +57,7 @@ static TaskHandle_t s_classify_handle = NULL;   // 052: ClassificationTask (Core
 // ─── 052: latest on-device prediction (written by ClassificationTask Core 0, ──
 //     read by MqttTask Core 0). 32-bit volatiles — atomic single load/store on Xtensa.
 static volatile int8_t g_pred_class      = -1;
-static volatile float  g_pred_proba[3]   = {0.0f, 0.0f, 0.0f};
+static volatile float  g_pred_proba[2]   = {0.0f, 0.0f};   // 053 binary: [non_tremor, tremor]
 static volatile bool   g_pred_valid      = false;
 static uint32_t        s_classify_count  = 0;
 
@@ -238,7 +238,6 @@ static void mqttTaskFn(void* pv) {
             snapshot.pred_class = g_pred_valid ? g_pred_class : -1;
             snapshot.pred_proba[0] = g_pred_proba[0];
             snapshot.pred_proba[1] = g_pred_proba[1];
-            snapshot.pred_proba[2] = g_pred_proba[2];
             publish_reading(&snapshot);
             s_mqtt_count++;
         }
@@ -279,7 +278,6 @@ static void classificationTaskFn(void* pv) {
         if (d.valid) {
             g_pred_proba[0] = d.proba[0];
             g_pred_proba[1] = d.proba[1];
-            g_pred_proba[2] = d.proba[2];
             g_pred_class = (int8_t)d.cls;
             g_pred_valid = true;
         }

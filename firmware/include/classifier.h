@@ -9,15 +9,15 @@
 
 namespace edge {
 
-// Canonical class mapping — identical to backend training (Control=0, Parkinson=1, Voluntary=2).
-enum class TremorClass : uint8_t { NON_TREMOR = 0, TREMOR = 1, VOLUNTARY = 2 };
+// Canonical class mapping — identical to backend training (Control/Non-Tremor=0, Parkinson/Tremor=1).
+// Feature 053: BINARY pivot — the Voluntary class was dropped end-to-end.
+enum class TremorClass : uint8_t { NON_TREMOR = 0, TREMOR = 1 };
 static_assert(static_cast<uint8_t>(TremorClass::NON_TREMOR) == 0, "mapping must not invert");
 static_assert(static_cast<uint8_t>(TremorClass::TREMOR)     == 1, "mapping must not invert");
-static_assert(static_cast<uint8_t>(TremorClass::VOLUNTARY)  == 2, "mapping must not invert");
 
 struct Decision {
     TremorClass cls;
-    float       proba[3];     // softmax, sums ~1.0  (index 0=Non-Tremor,1=Tremor,2=Voluntary)
+    float       proba[2];     // sigmoid head: proba[0]=P(Non-Tremor)=1-p, proba[1]=P(Tremor)=p
     uint32_t    t_decision_us; // stamped by the caller (0 here)
     bool        valid;        // false during warm-up / invalid window
 };

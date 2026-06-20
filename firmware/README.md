@@ -11,8 +11,8 @@
 
 ## On-Device Edge AI (Feature 052)
 
-The glove classifies movement locally (Non-Tremor=0, Tremor=1, Voluntary=2) and uses it to gate
-suppression — no backend round-trip needed.
+The glove classifies movement locally (Feature 053 BINARY: Non-Tremor=0, Tremor=1) and uses the
+Tremor probability to scale suppression proportionally — no backend round-trip needed.
 
 - **Pipeline** (`src/edge_features.cpp`): every 100 Hz IMU sample is streamed through a causal
   Butterworth band-pass; a 128-sample sliding window yields 66 features (stats + FFT peaks),

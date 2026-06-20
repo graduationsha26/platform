@@ -41,7 +41,12 @@ CSV_PATH = os.path.join(BACKEND_DIR, "ml_data", "combined_processed_data.csv")
 # ── Flat-array interpreter (float32, mirrors classifier.cpp) ──────────────────
 
 def _interp_predict(fm, X):
-    """Predict probabilities with the flat-array interpreter in float32 (device-equivalent)."""
+    """Predict probabilities with the flat-array interpreter in float32 (device-equivalent).
+
+    Feature 053 — BINARY: num_raw_outputs==1, so all trees sum into one raw score and
+    p_tremor = sigmoid(init + sum(leaf)); returns (n, 2) = [P(Non-Tremor), P(Tremor)] to match
+    sklearn predict_proba. (Falls back to softmax round-robin if an old multiclass model is passed.)
+    """
     feature = np.asarray(fm["feature"], dtype=np.int32)
     threshold = np.asarray(fm["threshold"], dtype=np.float32)
     left = np.asarray(fm["left"], dtype=np.int32)
@@ -49,11 +54,12 @@ def _interp_predict(fm, X):
     default_left = np.asarray(fm["default_left"], dtype=np.uint8)
     leaf_value = np.asarray(fm["leaf_value"], dtype=np.float32)
     roots = fm["tree_root"]
-    nc = fm["num_class"]
+    num_raw = fm.get("num_raw_outputs", fm["num_class"])
     init = np.asarray(fm["init_score"], dtype=np.float32)
 
     Xf = np.asarray(X, dtype=np.float32)
-    out = np.zeros((len(Xf), nc), dtype=np.float32)
+    out_cols = 2 if num_raw == 1 else num_raw
+    out = np.zeros((len(Xf), out_cols), dtype=np.float32)
     for i in range(len(Xf)):
         row = Xf[i]
         raw = init.copy()
@@ -65,10 +71,14 @@ def _interp_predict(fm, X):
                 else:
                     go_left = default_left[node] != 0
                 node = left[node] if go_left else right[node]
-            raw[t % nc] += leaf_value[node]
-        m = raw.max()
-        e = np.exp(raw - m)
-        out[i] = e / e.sum()
+            raw[t % num_raw] += leaf_value[node]
+        if num_raw == 1:
+            p = 1.0 / (1.0 + np.exp(-raw[0]))     # sigmoid -> P(Tremor)
+            out[i] = [1.0 - p, p]
+        else:
+            m = raw.max()
+            e = np.exp(raw - m)
+            out[i] = e / e.sum()
     return out
 
 

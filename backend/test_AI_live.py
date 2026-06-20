@@ -12,7 +12,7 @@ Sampling-rate ground truth (confirmed from firmware):
   The live stream we receive is the *transmitted* ~30.3 Hz, NOT 100 Hz. We resample up to 66.67 Hz.
 
 Output (exact, one line per prediction):
-  Sample, Prediction, Confidence, Precision, Non-Tremor %, Tremor %, Voluntary %
+  Sample, Prediction, Confidence, Precision, Non-Tremor %, Tremor %
 
 Usage:
   python backend/test_AI_live.py --broker 192.168.137.1 --port 1883 --topic "tremo/sensors/+"
@@ -50,7 +50,7 @@ WINDOW_SECONDS = 1.0
 BUFFER_LEN = max(1, int(round(LIVE_STREAM_RATE_HZ * WINDOW_SECONDS)))   # ≈ 30 samples
 PREDICT_EVERY_S = 0.100                        # emit a prediction every ~100 ms
 AXIS_KEYS = ['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ']
-CLASS_NAMES = {0: 'Non-Tremor', 1: 'Tremor', 2: 'Voluntary'}
+CLASS_NAMES = {0: 'Non-Tremor', 1: 'Tremor'}   # Feature 053: binary
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_MODEL = os.path.join(SCRIPT_DIR, 'ml_models', 'lgbm_tremor_model.pkl')
@@ -91,7 +91,7 @@ class LivePredictor:
 
     def _print_header(self):
         if not self.header_printed:
-            print('Sample, Prediction, Confidence, Precision, Non-Tremor %, Tremor %, Voluntary %')
+            print('Sample, Prediction, Confidence, Precision, Non-Tremor %, Tremor %')
             self.header_printed = True
 
     def maybe_predict(self):
@@ -116,7 +116,7 @@ class LivePredictor:
             window = resample_window(buf, WINDOW_SIZE)             # (67, 6) @ 66.67 Hz
             window = bandpass_2d(window)                           # band-pass AFTER resample
             feats = extract_features_66(window).reshape(1, -1)     # (1, 66)
-            proba = self.model.predict_proba(feats)[0]            # (3,)
+            proba = self.model.predict_proba(feats)[0]            # (2,) binary
         except Exception as e:
             print(f'# could not classify sample: {e}')
             return
@@ -130,8 +130,7 @@ class LivePredictor:
             f'{proba[cls] * 100:.1f}, '
             f'{self.precision_pct:.1f}, '
             f'{proba[0] * 100:.1f}, '
-            f'{proba[1] * 100:.1f}, '
-            f'{proba[2] * 100:.1f}'
+            f'{proba[1] * 100:.1f}'
         )
         print(line)
 

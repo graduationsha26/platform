@@ -258,15 +258,14 @@ bool publish_reading(FusedReading* reading) {
 
     // 052-edge-ai-inference: on-device classifier output (snake_case, matches backend mapping).
     // Always include the fields so monitor_edge_live.py can render them; -1 / nulls before warm-up.
-    static const char* kClassNames[3] = {"Non-Tremor", "Tremor", "Voluntary"};
-    if (reading->pred_valid && reading->pred_class >= 0 && reading->pred_class < 3) {
+    static const char* kClassNames[2] = {"Non-Tremor", "Tremor"};
+    if (reading->pred_valid && reading->pred_class >= 0 && reading->pred_class < 2) {
         doc["prediction"]      = reading->pred_class;
         doc["predicted_class"] = kClassNames[reading->pred_class];
         doc["confidence"]      = roundf(reading->pred_proba[reading->pred_class] * 1000.0f) / 1000.0f;
         JsonObject p = doc.createNestedObject("probabilities");
         p["non_tremor"] = roundf(reading->pred_proba[0] * 1000.0f) / 1000.0f;
         p["tremor"]     = roundf(reading->pred_proba[1] * 1000.0f) / 1000.0f;
-        p["voluntary"]  = roundf(reading->pred_proba[2] * 1000.0f) / 1000.0f;
     } else {
         doc["prediction"]      = -1;
         doc["predicted_class"] = nullptr;

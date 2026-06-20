@@ -1,9 +1,9 @@
-"""Business logic services for inference (Feature 051 — LightGBM 3-class).
+"""Business logic services for inference (Feature 053 — LightGBM BINARY).
 
 Cleaned up during the LGBM migration: the legacy RF/SVM, v1/v2, gravity-filter, and
-StandardScaler code paths were removed. The classical-ML path now serves a single 3-class
-LightGBM model (`lgbm`) using the shared 66-feature pipeline (no scaler). Deep-learning
-models (lstm/cnn_1d) remain loadable for the DL path.
+StandardScaler code paths were removed. Feature 053 pivoted the classical-ML path from 3-class
+to a BINARY model (`lgbm`, 0=Non-Tremor / 1=Tremor; the Voluntary class was dropped) using the
+shared 66-feature pipeline (no scaler). Deep-learning models (lstm/cnn_1d) remain loadable.
 """
 
 import joblib
@@ -40,7 +40,7 @@ except ImportError:
     )
 
 AXIS_NAMES = ['aX', 'aY', 'aZ', 'gX', 'gY', 'gZ']
-CLASS_NAMES = {0: 'Non-Tremor', 1: 'Tremor', 2: 'Voluntary'}
+CLASS_NAMES = {0: 'Non-Tremor', 1: 'Tremor'}   # Feature 053: binary
 
 
 class ModelCache:
@@ -191,7 +191,7 @@ class SeverityMapper:
 
 
 class InferenceService:
-    """Orchestrates load -> preprocess -> predict for the 3-class LightGBM model (and DL)."""
+    """Orchestrates load -> preprocess -> predict for the binary LightGBM model (and DL)."""
 
     def __init__(self):
         self.model_cache = ModelCache()
@@ -214,7 +214,7 @@ class InferenceService:
             features = self.preprocessing_service.preprocess(sensor_data, model_type, metadata)
 
             if model_type == 'ml':
-                proba = model.predict_proba(features)[0]          # (3,)
+                proba = model.predict_proba(features)[0]          # (2,) binary
             else:  # dl
                 if features.ndim == 2:
                     features = np.expand_dims(features, axis=0)
@@ -231,11 +231,10 @@ class InferenceService:
                     f'Inference took {inference_time_ms}ms (>5000ms limit)'
                 )
 
-            # 3-class probability breakdown (defensive against <3 outputs)
+            # Binary probability breakdown (Feature 053; defensive against <2 outputs)
             probs = {
                 'non_tremor': float(proba[0]) if len(proba) > 0 else 0.0,
                 'tremor': float(proba[1]) if len(proba) > 1 else 0.0,
-                'voluntary': float(proba[2]) if len(proba) > 2 else 0.0,
             }
 
             result = {

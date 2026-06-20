@@ -22,8 +22,12 @@ backend/ml_models/
 
 ## Pipeline
 
-`resample → 66.67 Hz  →  0.5–20 Hz band-pass (4th-order, zero-phase)  →  1-second windows
-(67 samples)  →  66 features (11 per axis × 6 axes)`  →  SMOTE + LightGBM (no scaler).
+`resample → 100 Hz  →  0.5–20 Hz band-pass (4th-order Butterworth, causal SOS)  →  1.28-second
+windows (128 samples)  →  66 features (11 per axis × 6 axes)`  →  SMOTE + LightGBM (no scaler).
+
+> **Feature 052 (Edge AI)** realigned the pipeline to the device's native **100 Hz** with
+> **128-sample** windows and a **causal** band-pass so the model can be transpiled to the ESP32.
+> Accuracy is unchanged (macro precision ≈ 0.88). See `## Feature 052 — On-Device Edge AI` below.
 
 - **Feature order** (axis-major, per axis): `mean, std, median, q1, q3, min, max,
   peak1_freq, peak1_amp, peak2_freq, peak2_amp`. Axes: `AX, AY, AZ, GX, GY, GZ`.
@@ -63,6 +67,29 @@ Produces, in order:
 
 `lightgbm`, `imbalanced-learn`, `scikit-learn`, `scipy`, `numpy`, `pandas`, `joblib`
 (declared in `backend/requirements.txt`).
+
+## Feature 052 — On-Device Edge AI
+
+The trained model is **transpiled to C++** and runs **on the ESP32 glove firmware** for
+real-time, network-independent tremor suppression. The backend remains authoritative for stored
+records.
+
+- **`export_to_c.py`** — `python backend/ml_models/export_to_c.py` reads `lgbm_tremor_model.pkl`
+  and generates `firmware/include/tremor_model.h` + `firmware/src/tremor_model.cpp` (flat-array
+  tree interpreter data + the matching band-pass SOS). Re-run after every retrain. The generated
+  files are deterministic (byte-identical) and must not be hand-edited.
+- **Parity gate** — `pytest backend/tests/test_edge_parity.py`. Layer A (model parity, no
+  compiler) proves the flat-array interpreter reproduces the Python model (validated: **100%**
+  decision agreement). Layer B (C DSP feature parity, SC-006) needs a host C++ compiler
+  (g++/clang/MSVC or PlatformIO `native`) — it builds `parity_shim.cpp` and is skipped otherwise.
+- **`monitor_edge_live.py`** — `python backend/monitor_edge_live.py --broker <host>` subscribes to
+  MQTT and prints the **ESP32's own** decisions in the 7-field format
+  (`Sample, Prediction, Confidence, Precision, Non-Tremor %, Tremor %, Voluntary %`). It does no
+  inference itself (unlike `test_AI_live.py`).
+- **Firmware** — `firmware/src/edge_features.cpp` (portable DSP, parity-exact), `classifier.cpp`
+  (interpreter), `suppression_gate.cpp` (smoothed Tremor gate), and a Core-0 `ClassificationTask`
+  in `task_scheduler.cpp`. Builds at Flash 75.7% / RAM 15.7% (partition `partitions_edge.csv`).
+- **Backup** — the prior 66.67 Hz model is preserved in `backend/ml_models/backup_66hz_model/`.
 
 ## Notes / follow-ups
 

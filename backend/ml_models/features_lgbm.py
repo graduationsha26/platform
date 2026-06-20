@@ -1,35 +1,51 @@
 """
 features_lgbm.py — Shared 66-feature pipeline for the LightGBM tremor classifier.
 
-Single source of truth for preprocessing + feature extraction, imported by BOTH the
-training script (backend/ml_models/train.py) and the live validator
-(backend/test_AI_live.py), and by the Django inference service
+Single source of truth for preprocessing + feature extraction, imported by the training
+script (backend/ml_models/train.py), the live validators (backend/test_AI_live.py,
+backend/monitor_edge_live.py), and the Django inference service
 (backend/inference/services.py). Guarantees the 66-feature vector is computed identically
-everywhere — exact parity with LGBM.ipynb.
+everywhere — and, for Feature 052, identically to the on-device C++ port
+(firmware/src/edge_features.cpp).
 
-Pipeline (per LGBM.ipynb):
-  resample -> 66.67 Hz  ->  0.5-20 Hz band-pass (4th-order, zero-phase)  ->  1 s windows (67 samples)
+Pipeline (Feature 052 — native edge rate):
+  resample -> 100 Hz  ->  0.5-20 Hz band-pass (4th-order Butterworth, CAUSAL SOS)
+  ->  128-sample windows (1.28 s; power-of-2 == FFT length)
   ->  66 features (11 per axis x 6 axes, axis-major)
+
+Why CAUSAL (single-pass sosfilt) instead of the previous zero-phase filtfilt:
+  the ESP32 runs the identical biquad cascade as a continuous stream filter (it cannot see
+  future samples). Training therefore filters the whole recording with the SAME causal SOS
+  before slicing windows, so each training window holds exactly what the device's streamed
+  filter produces (after its one-time warm-up). The per-window helper `bandpass_2d` /
+  `process_window` is used by the single-window REST/live paths (which lack a continuous
+  stream) and applies the same causal SOS to the window.
 
 Feature order per axis (must match the trained model + CSV columns):
   mean, std, median, q1, q3, min, max, peak1_freq, peak1_amp, peak2_freq, peak2_amp
 Axis order: AX, AY, AZ, GX, GY, GZ   (live stream aX..gZ map 1:1, same order)
 
-No feature scaler (the notebook's LightGBM uses none).
+No feature scaler (the LightGBM pipeline uses none).
 """
 
 import numpy as np
-from scipy.signal import butter, filtfilt, resample
+from scipy.signal import butter, sosfilt, sosfiltfilt, resample
 from scipy.interpolate import interp1d
 
-# ── Constants (exact notebook parity) ────────────────────────────────────────
-FS = 66.67                              # model sampling rate (Hz)
-WINDOW_SECONDS = 1.0
-WINDOW_SIZE = int(round(FS * WINDOW_SECONDS))   # 67 samples
+# ── Constants (Feature 052 native edge rate) ─────────────────────────────────
+FS = 100.0                              # model sampling rate (Hz) — device native, no resample
+WINDOW_SIZE = 128                       # samples per window (== FFT length, power of 2)
+WINDOW_SECONDS = WINDOW_SIZE / FS       # 1.28 s
 LOWCUT = 0.5
 HIGHCUT = 20.0
 BANDPASS_ORDER = 4
 SIGNAL_COLS = ["AX", "AY", "AZ", "GX", "GY", "GZ"]
+
+# Causal Butterworth band-pass as second-order sections (SOS). A 4th-order band-pass is an
+# 8th-order filter -> 4 biquad sections. These exact coefficients are what the firmware
+# hardcodes for esp-dsp's dsps_biquad_f32 cascade (see export note below). Single source of truth.
+_NYQ = FS / 2.0
+BANDPASS_SOS = butter(BANDPASS_ORDER, [LOWCUT / _NYQ, HIGHCUT / _NYQ], btype="band", output="sos")
 
 # Per-axis feature suffixes, in the exact order produced below.
 _FEATURE_TYPES = [
@@ -41,18 +57,29 @@ N_FEATURES = len(_FEATURE_TYPES) * len(SIGNAL_COLS)   # 66
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def bandpass(x, fs=FS, low=LOWCUT, high=HIGHCUT, order=BANDPASS_ORDER):
-    """4th-order Butterworth band-pass, zero-phase (filtfilt). 1-D in, 1-D out."""
-    nyq = fs / 2.0
-    b, a = butter(order, [low / nyq, high / nyq], btype="band")
-    return filtfilt(b, a, x)
+def bandpass(x, sos=BANDPASS_SOS):
+    """Causal 4th-order Butterworth band-pass (single-pass sosfilt). 1-D in, 1-D out.
+
+    Applied to a WHOLE recording at training time so each sliced window matches the device's
+    continuously-streamed filter output. Causal (not zero-phase) for streaming parity.
+    """
+    return sosfilt(sos, x)
 
 
-def bandpass_2d(window_2d, fs=FS, low=LOWCUT, high=HIGHCUT, order=BANDPASS_ORDER):
-    """Vectorized band-pass across all axes of a (n, 6) array (axis=0 = time)."""
-    nyq = fs / 2.0
-    b, a = butter(order, [low / nyq, high / nyq], btype="band")
-    return filtfilt(b, a, window_2d, axis=0)
+def bandpass_2d(window_2d, sos=BANDPASS_SOS):
+    """Causal band-pass across all axes of a (n, 6) array (axis=0 = time).
+
+    Used by the single-window REST/live paths (which have no continuous stream): the same
+    causal SOS is applied to the window from zero initial state.
+    """
+    return sosfilt(sos, np.asarray(window_2d, dtype=np.float64), axis=0)
+
+
+def bandpass_zerophase(x, sos=BANDPASS_SOS):
+    """Zero-phase fallback (forward-backward) — documented alternative if causal accuracy
+    regresses (research.md §2). Reproducible on-device over a buffered window. Not used by
+    default."""
+    return sosfiltfilt(sos, x)
 
 
 def resample_df(df, fs=FS):
@@ -148,3 +175,19 @@ def extract_features_66(window_2d):
         feats.append(f2)
         feats.append(a2)
     return np.asarray(feats, dtype=np.float64)
+
+
+def process_window(raw_window_2d):
+    """Canonical single-window path: causal band-pass the raw window, then extract 66 features.
+
+    Used by the single-window REST/live consumers (inference service, test_AI_live) so they
+    apply the SAME band-pass as training. (Training itself filters the whole recording before
+    slicing; this per-window form is the closest single-window equivalent — see module docstring.)
+    """
+    return extract_features_66(bandpass_2d(raw_window_2d))
+
+
+def get_bandpass_sos():
+    """Return the causal Butterworth SOS coefficients (shape (n_sections, 6)) — the exact
+    values the firmware hardcodes for its esp-dsp biquad cascade."""
+    return BANDPASS_SOS.copy()

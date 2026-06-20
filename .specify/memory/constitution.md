@@ -115,16 +115,21 @@ This constitution defines the non-negotiable architectural and technical princip
 ### AI Model Serving
 
 **Rule**: AI/ML models MUST be served via the Django backend utilizing a segmented ML architecture. Supported formats:
-- scikit-learn models (`.pkl` files)
+- scikit-learn / gradient-boosting models (`.pkl` files, incl. LightGBM)
 - TensorFlow/Keras models (`.h5` files)
 
 **Requirements**:
-- Classical ML models are stored in `backend/ml_models/models/`
-- Deep Learning models are stored in `backend/dl_models/models/`
-- All model inference APIs must be routed exclusively through the `backend/inference/` application.
-- Models are excluded from git via `.gitignore`.
-- Model inference performed server-side, never in browser.
+- Classical/boosting ML models are stored in `backend/ml_models/` (the `models/` subdirectory is optional; Feature 051 stores the served model directly in `backend/ml_models/`).
+- Deep Learning models are stored in `backend/dl_models/models/`.
+- All **server-side** model inference APIs must be routed exclusively through the `backend/inference/` application.
+- The Django backend remains the **authoritative source of truth** for persisted/clinical predictions.
+- Model inference performed server-side, never in the browser.
 - Predictions returned via REST API endpoints.
+
+**On-Device (Edge) Inference Exception** *(amended 2026-06-20, Feature 052)*:
+- A model **derived from a backend-trained artifact** MAY additionally run **on the ESP32 glove firmware** when real-time, network-independent closed-loop suppression requires a local decision (a backend round-trip cannot meet the hardware control latency or work offline).
+- The on-device model MUST be generated reproducibly from the backend-trained `.pkl` (e.g., transpiled to C), MUST use the identical feature definition and class mapping as the backend, and is **not** the system of record — the backend `inference` path remains authoritative for stored records.
+- Firmware DSP/inference libraries required for this (e.g., **`esp-dsp`**) and a model→C export tool are permitted within `firmware/` / `backend/ml_models/`.
 
 ## API Standards
 
@@ -170,4 +175,14 @@ This constitution defines the non-negotiable architectural and technical princip
 - Feature plans must document any principle conflicts
 - Unjustified violations block feature implementation
 
-**Version**: 1.1.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-04-09
+**Version**: 1.2.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-06-20
+
+<!--
+Amendment 2026-06-20 (v1.1.0 → v1.2.0, Feature 052-edge-ai-inference):
+- AI Model Serving: added the "On-Device (Edge) Inference Exception" allowing a model derived
+  reproducibly from a backend-trained artifact to also run on the ESP32 firmware for real-time
+  closed-loop suppression, with the backend remaining authoritative for persisted records.
+- Permitted firmware DSP/inference tooling (esp-dsp + a model→C export tool).
+- Clarified that boosting models (LightGBM) may be stored directly in backend/ml_models/.
+- MINOR bump: materially expands an existing principle without removing constraints.
+-->

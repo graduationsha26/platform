@@ -136,3 +136,12 @@
 #define SENSOR_TASK_STACK   6144     // bytes — IMU read + Kalman filter + SPI driver call depth
 #define CONTROL_TASK_STACK  5120     // bytes — PID computation (LPF + deadband state) + CMG LEDC write
 #define MQTT_TASK_STACK     8192     // bytes — JSON serialization + MQTT library
+
+// ─── 052-edge-ai-inference: On-Device Tremor Classifier ───────────────────────
+// The glove classifies movement locally (Non-Tremor=0, Tremor=1, Voluntary=2) and gates PID
+// suppression on sustained Tremor. The required constants (EDGE_*, CLASSIFY_*, GATE_*) live in
+// the COMMITTED header firmware/include/edge_config.h (so they exist even with an old config.h).
+// To tune the gate/cadence, either edit edge_config.h or override a value by #define-ing it here
+// BEFORE the firmware includes edge_config.h. Example override:
+//   #define GATE_MIN_DWELL_MS 600   // longer anti-chatter dwell
+//   #define EDGE_GATE_ENABLED false  // rollback to legacy always-on suppression

@@ -242,8 +242,9 @@ bool publish_reading(FusedReading* reading) {
     format_iso8601(reading->timestamp_iso, sizeof(reading->timestamp_iso));
 
     // Build JSON payload using ArduinoJson 6.x
-    // StaticJsonDocument<256> uses stack memory — safe for 33Hz publish loop
-    StaticJsonDocument<256> doc;
+    // StaticJsonDocument<512> uses stack memory — safe for 33Hz publish loop
+    // (bumped from 256 to fit the 052 edge-classifier prediction fields).
+    StaticJsonDocument<512> doc;
     doc["device_id"]  = DEVICE_SERIAL;
     doc["timestamp"]  = reading->timestamp_iso;
     // Round to 4 decimal places before serialization
@@ -255,8 +256,25 @@ bool publish_reading(FusedReading* reading) {
     doc["gZ"] = roundf(reading->gZ * 10000.0f) / 10000.0f;
     doc["battery_level"] = roundf(reading->battery_level * 10.0f) / 10.0f;
 
+    // 052-edge-ai-inference: on-device classifier output (snake_case, matches backend mapping).
+    // Always include the fields so monitor_edge_live.py can render them; -1 / nulls before warm-up.
+    static const char* kClassNames[3] = {"Non-Tremor", "Tremor", "Voluntary"};
+    if (reading->pred_valid && reading->pred_class >= 0 && reading->pred_class < 3) {
+        doc["prediction"]      = reading->pred_class;
+        doc["predicted_class"] = kClassNames[reading->pred_class];
+        doc["confidence"]      = roundf(reading->pred_proba[reading->pred_class] * 1000.0f) / 1000.0f;
+        JsonObject p = doc.createNestedObject("probabilities");
+        p["non_tremor"] = roundf(reading->pred_proba[0] * 1000.0f) / 1000.0f;
+        p["tremor"]     = roundf(reading->pred_proba[1] * 1000.0f) / 1000.0f;
+        p["voluntary"]  = roundf(reading->pred_proba[2] * 1000.0f) / 1000.0f;
+    } else {
+        doc["prediction"]      = -1;
+        doc["predicted_class"] = nullptr;
+        doc["confidence"]      = nullptr;
+    }
+
     // Serialize to char buffer
-    char payload[256];
+    char payload[512];
     size_t len = serializeJson(doc, payload, sizeof(payload));
     if (len == 0) {
         Serial.println("[MQTT] JSON serialization failed.");

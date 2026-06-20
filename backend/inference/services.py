@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 # Shared 66-feature pipeline — same module used by training and the live validator.
 try:
-    from ml_models.features_lgbm import extract_features_66, get_feature_names_66
+    from ml_models.features_lgbm import extract_features_66, get_feature_names_66, process_window
     _FEATURE_EXTRACTOR_AVAILABLE = True
 except ImportError:
     _FEATURE_EXTRACTOR_AVAILABLE = False
@@ -149,7 +149,13 @@ class PreprocessingService:
         raise ValueError(f'Unknown model type: {model_type}')
 
     def _preprocess_lgbm(self, data: np.ndarray) -> np.ndarray:
-        """Extract the 66 features from a (window_size, 6) window. No scaler."""
+        """Band-pass the raw (window_size, 6) window and extract the 66 features. No scaler.
+
+        Feature 052: the model is trained on band-passed windows, so the REST path must apply
+        the SAME causal band-pass (process_window) before feature extraction — otherwise it
+        would feed unfiltered features to a filter-trained model. Send ~128-sample windows
+        (1.28 s at 100 Hz) to match the training window length.
+        """
         if not _FEATURE_EXTRACTOR_AVAILABLE:
             raise RuntimeError('ml_models.features_lgbm unavailable; cannot preprocess.')
 
@@ -159,7 +165,7 @@ class PreprocessingService:
                 f'LightGBM model expects a window of shape (window_size, 6), got {data.shape}. '
                 'Provide a full sensor window, not a single reading.'
             )
-        feature_vector = extract_features_66(data)       # (66,)
+        feature_vector = process_window(data)            # band-pass -> (66,)
         return feature_vector.reshape(1, -1)             # (1, 66)
 
     def _preprocess_dl(self, data: np.ndarray, metadata: Dict) -> np.ndarray:

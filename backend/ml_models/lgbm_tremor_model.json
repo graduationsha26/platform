@@ -75,9 +75,9 @@
     "GZ_peak2_amp"
   ],
   "pipeline": {
-    "fs_hz": 66.67,
-    "window_seconds": 1.0,
-    "window_samples": 67,
+    "fs_hz": 100.0,
+    "window_seconds": 1.28,
+    "window_samples": 128,
     "bandpass_hz": [
       0.5,
       20.0
@@ -96,12 +96,12 @@
   },
   "metrics": {
     "cv": "GroupKFold(4) on file_id",
-    "window_macro_precision": 0.8825143223337871,
-    "window_macro_recall": 0.8763739577523584,
-    "window_macro_f1": 0.8783380860337364,
-    "window_accuracy": 0.8756452369779446,
-    "file_macro_precision": 0.9703703703703704,
-    "file_accuracy": 0.9658119658119658
+    "window_macro_precision": 0.8830010394659759,
+    "window_macro_recall": 0.8759417550534598,
+    "window_macro_f1": 0.8779333922562067,
+    "window_accuracy": 0.875524140409728,
+    "file_macro_precision": 0.9795472287275566,
+    "file_accuracy": 0.9743589743589743
   },
-  "trained_at": "2026-06-20T06:01:15.813860+00:00"
+  "trained_at": "2026-06-20T09:25:14.493498+00:00"
 }

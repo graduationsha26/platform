@@ -26,12 +26,16 @@
 
 #include "task_scheduler.h"
 #include "config.h"
+#include "edge_config.h"   // 052: committed edge-AI constants (CLASSIFY_*, EDGE_*, GATE_*)
 #include "imu.h"
 #include "kalman.h"
 #include "mqtt_publisher.h"
 #include "battery_reader.h"
 #include "cmg.h"
 #include "pid_controller.h"
+#include "edge_features.h"        // 052-edge-ai-inference
+#include "classifier.h"
+#include "suppression_gate.h"
 #include "esp_timer.h"
 #include <Arduino.h>
 
@@ -39,11 +43,23 @@
 
 QueueHandle_t g_sensor_mailbox = NULL;
 
+// 052: continuous 100Hz 6-axis stream (SensorTask -> ClassificationTask) for the band-pass
+// filter, which must see EVERY sample (the mailbox only holds the latest).
+QueueHandle_t g_imu_stream = NULL;
+
 // ─── Task Handles ─────────────────────────────────────────────────────────────
 
-static TaskHandle_t s_sensor_handle  = NULL;
-TaskHandle_t        s_control_handle = NULL;   // module-visible — notified directly by SensorTask
-static TaskHandle_t s_mqtt_handle    = NULL;
+static TaskHandle_t s_sensor_handle   = NULL;
+TaskHandle_t        s_control_handle  = NULL;   // module-visible — notified directly by SensorTask
+static TaskHandle_t s_mqtt_handle     = NULL;
+static TaskHandle_t s_classify_handle = NULL;   // 052: ClassificationTask (Core 0)
+
+// ─── 052: latest on-device prediction (written by ClassificationTask Core 0, ──
+//     read by MqttTask Core 0). 32-bit volatiles — atomic single load/store on Xtensa.
+static volatile int8_t g_pred_class      = -1;
+static volatile float  g_pred_proba[3]   = {0.0f, 0.0f, 0.0f};
+static volatile bool   g_pred_valid      = false;
+static uint32_t        s_classify_count  = 0;
 
 // ─── Kalman Filter Instances (written by scheduler_start, used by SensorTask) ─
 
@@ -107,6 +123,14 @@ static void sensorTaskFn(void* pv) {
         xQueueOverwrite(g_sensor_mailbox, &fr);
         if (s_control_handle) xTaskNotifyGive(s_control_handle);   // wake ControlTask immediately — new sample ready
 
+        // 052: stream the calibrated 6-axis sample to the classifier (non-blocking; axis order
+        // aX,aY,aZ,gX,gY,gZ matches SIGNAL_COLS). Dropped only if the queue is full (shouldn't
+        // happen: ClassificationTask drains ~10 samples per 100ms cycle, queue holds 32).
+        if (g_imu_stream) {
+            float s6[6] = { calib.aX, calib.aY, calib.aZ, calib.gX, calib.gY, calib.gZ };
+            xQueueSend(g_imu_stream, s6, 0);
+        }
+
         s_sensor_count++;
 
         vTaskDelayUntil(&xLastWakeTime, xPeriod);
@@ -157,6 +181,12 @@ static void controlTaskFn(void* pv) {
         float measurement = (TARGET_TREMOR_AXIS == AXIS_GX) ? snapshot.gX : snapshot.gY;
         float pid_output = pid_update(&pid_axis, measurement);
 
+        // ── 052: gate suppression on the on-device class (smoothed authority [0,1]) ──
+        // The PID law is unchanged; the classifier decides WHETHER / how strongly to engage.
+        // Authority ramps 0->1 only on sustained Tremor and 1->0 on sustained non-Tremor, so
+        // actuators never chatter. authority==0 -> pid_output*0 -> gimbal returns to neutral.
+        pid_output *= edge::gate_authority();
+
         // ── Issue CMG actuation ───────────────────────────────────────────────
         cmg_set_gimbal(pid_output);
 
@@ -203,10 +233,58 @@ static void mqttTaskFn(void* pv) {
         if (xQueuePeek(g_sensor_mailbox, &snapshot, pdMS_TO_TICKS(40)) == pdTRUE) {
             // Populate battery level on local snapshot copy before publishing
             snapshot.battery_level = read_battery();
+            // 052: attach the latest on-device classifier output to the telemetry payload
+            snapshot.pred_valid = g_pred_valid;
+            snapshot.pred_class = g_pred_valid ? g_pred_class : -1;
+            snapshot.pred_proba[0] = g_pred_proba[0];
+            snapshot.pred_proba[1] = g_pred_proba[1];
+            snapshot.pred_proba[2] = g_pred_proba[2];
             publish_reading(&snapshot);
             s_mqtt_count++;
         }
 
+        vTaskDelayUntil(&xLastWakeTime, xPeriod);
+    }
+}
+
+// ─── ClassificationTask (Core 0, prio 4, 10Hz) — 052-edge-ai-inference ────────
+// Streams every IMU sample through the band-pass (continuous filter), then once per
+// CLASSIFY_PERIOD_MS produces a 3-class decision and updates the suppression gate. Pinned to
+// Core 0 (Core 1 is saturated by Sensor+Control); never on the <70ms control path.
+
+static void classificationTaskFn(void* pv) {
+    (void)pv;
+    edge::edge_reset();      // clear ring buffer + filter state (warm-up starts now)
+    edge::gate_reset();      // safe (disengaged) until sustained Tremor is detected
+
+    static float s6[edge::N_AXES];
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xPeriod = pdMS_TO_TICKS(CLASSIFY_PERIOD_MS);   // ~100ms => 10Hz
+
+    for (;;) {
+        // Drain ALL queued samples through the streaming filter (keeps it continuous).
+        while (xQueueReceive(g_imu_stream, s6, 0) == pdTRUE) {
+            edge::edge_push_sample(s6);
+        }
+
+        // Produce a decision (valid=false during warm-up / invalid window).
+        edge::Decision d = edge::classify_current_window();
+        uint32_t now_us = (uint32_t)esp_timer_get_time();
+        d.t_decision_us = now_us;
+
+        // Smoothly gate suppression on the decision.
+        edge::gate_update(d, now_us);
+
+        // Publish the latest valid prediction for MQTT telemetry.
+        if (d.valid) {
+            g_pred_proba[0] = d.proba[0];
+            g_pred_proba[1] = d.proba[1];
+            g_pred_proba[2] = d.proba[2];
+            g_pred_class = (int8_t)d.cls;
+            g_pred_valid = true;
+        }
+
+        s_classify_count++;
         vTaskDelayUntil(&xLastWakeTime, xPeriod);
     }
 }
@@ -217,6 +295,10 @@ void scheduler_start(CalibrationOffsets* offsets) {
     // Create the shared sensor mailbox (length 1, thread-safe via FreeRTOS internals)
     g_sensor_mailbox = xQueueCreate(1, sizeof(FusedReading));
     configASSERT(g_sensor_mailbox != NULL);
+
+    // 052: continuous 100Hz sample stream to the classifier (32 deep ≈ 320ms buffer)
+    g_imu_stream = xQueueCreate(32, sizeof(float) * edge::N_AXES);
+    configASSERT(g_imu_stream != NULL);
 
     // Seed Kalman filters from calibration gyro biases
     kalman_init(&s_roll_kf,  offsets->gX_bias);
@@ -260,4 +342,17 @@ void scheduler_start(CalibrationOffsets* offsets) {
     );
     configASSERT(ret == pdPASS);
     Serial.println("[BOOT] MqttTask    started (Core 0, prio 5, 30Hz)");
+
+    // Create ClassificationTask (Core 0, prio CLASSIFY_TASK_PRIO, ~10Hz) — 052-edge-ai-inference
+    ret = xTaskCreatePinnedToCore(
+        classificationTaskFn,   // task function
+        "ClassifyTask",         // debug name
+        CLASSIFY_TASK_STACK,    // stack in bytes (8192 — FFT/feature buffers are static, not stack)
+        NULL,                   // pvParameters: not used
+        CLASSIFY_TASK_PRIO,     // priority 4 (below MqttTask=5; never on the Core1 control path)
+        &s_classify_handle,     // output handle
+        CLASSIFY_TASK_CORE      // Core 0 — off the saturated Core 1
+    );
+    configASSERT(ret == pdPASS);
+    Serial.println("[BOOT] ClassifyTask started (Core 0, prio 4, 10Hz)");
 }

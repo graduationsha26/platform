@@ -1,11 +1,13 @@
 """
 train.py — LightGBM tremor-classification training pipeline (Feature 051).
 
-Reproduces the validated LGBM.ipynb pipeline as a single, reproducible, deterministic run:
+Reproduces the validated LGBM.ipynb pipeline as a single, reproducible, deterministic run.
+Feature 052 retrains at the device's native edge rate so the on-device C++ port matches:
 
   1. Load the three labeled recording groups (Control=0, Parkinson's=1, Voluntary=2).
-  2. Resample each recording to 66.67 Hz, band-pass 0.5-20 Hz, slice 1-second (67-sample)
-     non-overlapping windows, extract the 66 features (shared features_lgbm module).
+  2. Resample each recording to 100 Hz, apply the CAUSAL Butterworth band-pass 0.5-20 Hz to the
+     WHOLE recording (so each window matches the device's streamed filter), slice 1.28-second
+     (128-sample) non-overlapping windows, extract the 66 features (shared features_lgbm module).
   3. Combine + label, drop inf/NaN, and SAVE backend/ml_data/combined_processed_data.csv
      *BEFORE* any model training begins.
   4. Train ONE SMOTE+LightGBM model with PINNED hyperparameters (no run-time search),

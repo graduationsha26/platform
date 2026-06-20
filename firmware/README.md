@@ -1,10 +1,32 @@
 # TremoAI Smart Glove Firmware
 
-**Features**: 025-imu-kalman-fusion, 030-esp32-mqtt, 031-freertos-scheduler
+**Features**: 025-imu-kalman-fusion, 030-esp32-mqtt, 031-freertos-scheduler, 052-edge-ai-inference
 **MCU**: ESP32 (ESP-IDF Arduino framework, dual-core Xtensa LX6 240MHz)
 **Sensor**: MPU6500 6-axis IMU (SPI; accelerometer + gyroscope, no magnetometer)
 **Algorithm**: Lauszus 2-state Kalman filter for roll + pitch (MQTT telemetry only); single-axis PID (TARGET_TREMOR_AXIS) for tremor suppression — feedback is raw gyro, not Kalman-filtered
+**On-device AI (052)**: a transpiled LightGBM classifier runs locally on Core 0 (~10 Hz) and **gates** the PID suppression so it engages only on sustained Tremor (smoothed, no actuator chatter)
 **Output**: SensorTask 100Hz, ControlTask 200Hz, MqttTask 30Hz (JSON → `tremo/sensors/{DEVICE_SERIAL}`)
+
+---
+
+## On-Device Edge AI (Feature 052)
+
+The glove classifies movement locally (Non-Tremor=0, Tremor=1, Voluntary=2) and uses it to gate
+suppression — no backend round-trip needed.
+
+- **Pipeline** (`src/edge_features.cpp`): every 100 Hz IMU sample is streamed through a causal
+  Butterworth band-pass; a 128-sample sliding window yields 66 features (stats + FFT peaks),
+  identical to `backend/ml_models/features_lgbm.py`. DSP is portable C++ (a host parity harness
+  validates it bit-for-bit; esp-dsp is an optional accelerator).
+- **Model** (`src/tremor_model.cpp`, `include/tremor_model.h`): a flat-array LightGBM interpreter,
+  **generated** by `python backend/ml_models/export_to_c.py` from the trained `.pkl`. Do not
+  hand-edit; regenerate after each retrain. Needs a large app partition → `partitions_edge.csv`.
+- **Gate** (`src/suppression_gate.cpp`): sliding vote + asymmetric hysteresis + minimum dwell +
+  authority ramp. Tunable in `include/edge_config.h`. Set `EDGE_GATE_ENABLED=false` (override in
+  `config.h`) to roll back to the legacy unconditional always-on suppression.
+- **Live monitor**: `python backend/monitor_edge_live.py --broker <host>` prints the ESP32's own
+  decisions (the firmware appends `prediction`/`confidence`/`probabilities` to the MQTT payload).
+- **Footprint**: Flash ≈ 75.7%, RAM ≈ 15.7% (ESP32 4 MB).
 
 ---
 
